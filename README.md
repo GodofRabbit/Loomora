@@ -16,12 +16,12 @@ Loomora 是一款基于 Electron + Vue 3 的 **AI 文生图桌面工作台**。�
 
 ## ✦ 技术栈
 
-| 层 | 技术 |
-|---|------|
-| 桌面框架 | Electron 31 |
-| 前端 | Vue 3 + Vite 5 |
-| 构建 | electron-builder (NSIS) |
-| 运行时 | Node.js |
+| 层       | 技术                    |
+| -------- | ----------------------- |
+| 桌面框架 | Electron 31             |
+| 前端     | Vue 3 + Vite 5          |
+| 构建     | electron-builder (NSIS) |
+| 运行时   | Node.js                 |
 
 ## ✦ 项目结构
 

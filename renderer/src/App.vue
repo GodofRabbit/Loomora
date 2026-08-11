@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed } from 'vue';
 const prompt = ref(''),
   ratio = ref('16:9'),
   count = ref(1),
@@ -9,31 +9,31 @@ const prompt = ref(''),
   busy = ref(false),
   endpoint = ref('https://www.zexitongxue.com'),
   model = ref('gpt-image-2'),
-  apiKey = ref(localStorage.getItem('loomora-key') || '')
-const ratios = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2']
-const counter = computed(() => `${prompt.value.length}/800`)
+  apiKey = ref(localStorage.getItem('loomora-key') || '');
+const ratios = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2'];
+const counter = computed(() => `${prompt.value.length}/800`);
 async function pick() {
   if (reference.value.length >= 14) {
-    status.value = '最多添加 14 张参考图'
-    return
+    status.value = '最多添加 14 张参考图';
+    return;
   }
-  const r = await window.forge.pickImage()
-  if (r) reference.value.push(r)
+  const r = await window.forge.pickImage();
+  if (r) reference.value.push(r);
 }
 function removeRef(i) {
-  reference.value.splice(i, 1)
+  reference.value.splice(i, 1);
 }
 function save() {
-  localStorage.setItem('loomora-key', apiKey.value)
-  status.value = '配置已保存'
+  localStorage.setItem('loomora-key', apiKey.value);
+  status.value = '配置已保存';
 }
 async function generate() {
   if (!prompt.value.trim()) {
-    status.value = '请先描述你的创意'
-    return
+    status.value = '请先描述你的创意';
+    return;
   }
-  busy.value = true
-  status.value = '正在织造画面…'
+  busy.value = true;
+  status.value = '正在织造画面…';
   const r = await window.forge.generate({
     endpoint: endpoint.value,
     apiKey: apiKey.value,
@@ -42,14 +42,14 @@ async function generate() {
     aspect: ratio.value,
     count: count.value,
     reference: reference.value,
-  })
-  busy.value = false
+  });
+  busy.value = false;
   if (!r.ok) {
-    status.value = r.error
-    return
+    status.value = r.error;
+    return;
   }
-  images.value = r.images || []
-  status.value = r.folder ? `已保存至 ${r.folder}` : '创作完成'
+  images.value = r.images || [];
+  status.value = r.folder ? `已保存至 ${r.folder}` : '创作完成';
 }
 </script>
 <template>
