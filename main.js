@@ -2,15 +2,13 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const SIZES = {
+const GPT_IMAGE_SIZES = {
   '1:1': '1024x1024',
-  '16:9': '1024x576',
-  '9:16': '576x1024',
-  '4:3': '1024x768',
-  '3:4': '768x1024',
-  '3:2': '1024x683',
-  '2:3': '683x1024',
-  '21:9': '1024x439',
+  '16:9': '2048x1152',
+  '9:16': '2160x3840',
+  '4:3': '1536x1024',
+  '3:4': '1024x1536',
+  '3:2': '1536x1024',
 };
 const headers = (key, json = false) => ({
   Authorization: `Bearer ${key}`,
@@ -22,8 +20,10 @@ const statusOf = (d) =>
 function imagesOf(d) {
   if (d?.result_url) return [{ url: d.result_url }];
   if (Array.isArray(d?.data)) return d.data;
-  if (Array.isArray(d?.data?.data)) return d.data.data;
-  if (d?.data?.data && typeof d.data.data === 'object') return [d.data.data];
+  if (d?.data && typeof d.data === 'object') {
+    const nested = imagesOf(d.data);
+    if (nested.length) return nested;
+  }
   for (const k of ['url', 'image_url', 'b64_json', 'base64'])
     if (d?.[k]) return [d];
   return [];
@@ -46,7 +46,10 @@ function galleryDir() {
 async function download(url, key) {
   const r = await fetch(url, { headers: headers(key) });
   if (!r.ok) throw new Error(`下载图片失败 (${r.status})`);
-  return Buffer.from(await r.arrayBuffer());
+  return {
+    buffer: Buffer.from(await r.arrayBuffer()),
+    mime: r.headers.get('content-type')?.split(';')[0],
+  };
 }
 async function saveImages(items, { base, key, taskId, count }) {
   const dir = galleryDir(),
@@ -61,24 +64,32 @@ async function saveImages(items, { base, key, taskId, count }) {
       url = item.url || item.image_url;
     if (b64) buffer = Buffer.from(b64.replace(/^data:[^,]+,/, ''), 'base64');
     else if (url) {
-      buffer = await download(url, key);
-      mime = /\.jpe?g(?:\?|$)/i.test(url)
-        ? 'image/jpeg'
-        : /\.webp(?:\?|$)/i.test(url)
-          ? 'image/webp'
-          : 'image/png';
-    } else if (taskId)
-      buffer = await download(
+      const downloaded = await download(url, key);
+      buffer = downloaded.buffer;
+      mime =
+        downloaded.mime ||
+        (/\.jpe?g(?:\?|$)/i.test(url)
+          ? 'image/jpeg'
+          : /\.webp(?:\?|$)/i.test(url)
+            ? 'image/webp'
+            : 'image/png');
+    } else if (taskId) {
+      const downloaded = await download(
         `${base}/v1/images/tasks/${taskId}/content?index=${i}`,
         key,
       );
-    else continue;
+      buffer = downloaded.buffer;
+      mime = downloaded.mime || mime;
+    } else continue;
     const ext = mime.includes('jpeg')
         ? 'jpg'
         : mime.includes('webp')
           ? 'webp'
           : 'png',
-      file = path.join(dir, `loomora-${Date.now()}-${i + 1}.${ext}`);
+      file = path.join(
+        dir,
+        `loomora-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${i + 1}.${ext}`,
+      );
     fs.writeFileSync(file, buffer);
     localPaths.push(file);
     images.push(`data:${mime};base64,${buffer.toString('base64')}`);
@@ -129,28 +140,85 @@ ipcMain.handle('pick-image', async () => {
   };
 });
 
-ipcMain.handle('generate', async (_e, p) => {
+ipcMain.handle('list-gallery', async () => {
+  const roots = [
+    path.join(
+      app.isPackaged ? path.dirname(process.execPath) : __dirname,
+      'Gallery',
+    ),
+    path.join(app.getPath('userData'), 'Gallery'),
+  ];
+  const files = [];
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    for (const date of fs.readdirSync(root)) {
+      const dir = path.join(root, date);
+      if (!fs.statSync(dir).isDirectory()) continue;
+      for (const name of fs.readdirSync(dir)) {
+        if (!/\.(png|jpe?g|webp)$/i.test(name)) continue;
+        const file = path.join(dir, name);
+        files.push({
+          name,
+          date,
+          path: file,
+          data: `data:image/${path.extname(name).slice(1).replace('jpg', 'jpeg')};base64,${fs.readFileSync(file).toString('base64')}`,
+          createdAt: fs.statSync(file).mtimeMs,
+        });
+      }
+    }
+  }
+  return files.sort((a, b) => b.createdAt - a.createdAt);
+});
+
+async function generateOne(p, batchIndex = 0) {
+  console.log('[Loomora] generate IPC received', {
+    endpoint: p?.endpoint,
+    model: p?.model,
+    hasKey: Boolean(p?.apiKey),
+    promptLength: p?.prompt?.length,
+    batchIndex,
+  });
   if (!p.apiKey) return { ok: false, error: '请先填写 API Key' };
   if (!p.prompt?.trim()) return { ok: false, error: '请输入提示词' };
-  const base = (p.endpoint || 'https://www.zexitongxue.com').replace(/\/$/, '');
+  let base;
   try {
+    const endpoint = new URL(p.endpoint || 'https://www.zexitongxue.com');
+    base = endpoint.origin;
+    const model = p.model?.trim() || 'gpt-image-2';
+    const isGptImage = model === 'gpt-image-2' || /^dall-e(?:-|$)/.test(model);
+    const isGemini =
+      model.startsWith('gemini-') || model.startsWith('nano-banana');
     const body = {
-      model: p.model || 'gpt-image-2',
+      model,
       prompt: p.prompt.trim(),
-      size: SIZES[p.aspect] || p.aspect || '1024x1024',
-      quality: 'high',
-      n: Math.max(1, Number(p.count) || 1),
+      size: isGptImage
+        ? p.size || GPT_IMAGE_SIZES[p.aspect] || '1024x1024'
+        : (p.size && p.size.includes(':') ? p.size : p.aspect) || '1:1',
+      ...(isGptImage
+        ? { quality: p.quality || 'auto' }
+        : isGemini
+          ? { quality: p.quality || '2K' }
+          : {}),
+      n: 1,
     };
     if (p.reference?.length) {
-      body.reference_images = p.reference.map((x) => x.data);
-      body.reference_image = p.reference[0].data;
+      const references = p.reference.map((x) => x.data);
+      body.image_url = references.length === 1 ? references[0] : references;
     }
-    const res = await fetch(`${base}/v1/images/generations/async`, {
+    const requestUrl = `${base}/v1/images/generations/async`;
+    console.log(
+      `[Loomora] POST batch ${batchIndex + 1}`,
+      requestUrl,
+      JSON.stringify(body),
+    );
+    const res = await fetch(requestUrl, {
         method: 'POST',
         headers: headers(p.apiKey, true),
         body: JSON.stringify(body),
       }),
       text = await res.text();
+    console.log('[Loomora] image response', res.status, res.statusText);
+    console.log('[Loomora] image response body', text.slice(0, 2000));
     let json;
     try {
       json = JSON.parse(text);
@@ -176,8 +244,20 @@ ipcMain.handle('generate', async (_e, p) => {
       const q = await fetch(`${base}/v1/images/tasks/${taskId}`, {
         headers: headers(p.apiKey),
       });
-      if (!q.ok) continue;
-      last = await q.json();
+      console.log('[Loomora] image request sent', res.status);
+      const queryText = await q.text();
+      try {
+        last = JSON.parse(queryText);
+      } catch {
+        if (!q.ok) throw new Error(`Task query failed (${q.status})`);
+        continue;
+      }
+      if (!q.ok)
+        throw new Error(
+          last?.error?.message ||
+            last?.message ||
+            `Task query failed (${q.status})`,
+        );
       const state = statusOf(last);
       if (['succeeded', 'completed', 'success'].includes(state))
         return {
@@ -198,4 +278,35 @@ ipcMain.handle('generate', async (_e, p) => {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+ipcMain.handle('generate', async (_e, p) => {
+  const total = Math.min(4, Math.max(1, Number(p.count) || 1));
+  console.log(`[Loomora] starting ${total} concurrent generation request(s)`);
+  const results = await Promise.all(
+    Array.from({ length: total }, (_, index) =>
+      (async () => {
+        if (index > 0) {
+          await new Promise((resolve) => setTimeout(resolve, index * 1000));
+        }
+        return generateOne(p, index);
+      })(),
+    ),
+  );
+  const successful = results.filter((result) => result.ok);
+  const failed = results
+    .map((result, index) => ({ result, index }))
+    .filter(({ result }) => !result.ok);
+  return {
+    ok: successful.length > 0,
+    images: successful.flatMap((result) => result.images || []),
+    localPaths: successful.flatMap((result) => result.localPaths || []),
+    folder: successful.find((result) => result.folder)?.folder,
+    error: failed.length
+      ? failed
+          .map(({ result, index }) => `#${index + 1}: ${result.error}`)
+          .join('; ')
+      : undefined,
+    failedCount: failed.length,
+  };
 });

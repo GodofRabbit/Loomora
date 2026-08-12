@@ -1,4 +1,5 @@
 node_modules/
 renderer-dist/
+Gallery/
 .DS_Store
 *.log
