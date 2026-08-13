@@ -10,6 +10,14 @@ const {
 const path = require('path');
 const fs = require('fs');
 
+const OCR_MODEL_FILES = new Set([
+  'detection/model.json',
+  'detection/chunk_1.dat',
+  'recognition/model.json',
+  'recognition/chunk_1.dat',
+  'recognition/chunk_2.dat',
+]);
+
 const GPT_IMAGE_SIZES = {
   '1:1': '1024x1024',
   '16:9': '2048x1152',
@@ -229,6 +237,26 @@ ipcMain.handle('copy-image', async (_event, src) => {
   if (image.isEmpty()) throw new Error('Unable to copy image');
   clipboard.writeImage(image);
   return true;
+});
+
+ipcMain.handle('copy-text', async (_event, text) => {
+  clipboard.writeText(String(text || ''));
+  return true;
+});
+
+ipcMain.handle('read-ocr-model', async (_event, relativePath) => {
+  const normalized = String(relativePath || '').replace(/\\/g, '/');
+  if (!OCR_MODEL_FILES.has(normalized)) throw new Error('无效的 OCR 模型文件');
+  const rendererRoot = process.env.VITE_DEV_SERVER_URL
+    ? path.join(__dirname, 'renderer', 'public')
+    : path.join(__dirname, 'renderer-dist');
+  const modelPath = path.join(
+    rendererRoot,
+    'models',
+    'ocr',
+    ...normalized.split('/'),
+  );
+  return fs.readFileSync(modelPath);
 });
 
 ipcMain.handle('download-image', async (_event, payload) => {

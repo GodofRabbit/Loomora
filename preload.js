@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('forge', {
     ipcRenderer.invoke('save-edited-image', payload),
   downloadImage: (payload) => ipcRenderer.invoke('download-image', payload),
   copyImage: (src) => ipcRenderer.invoke('copy-image', src),
+  copyText: (text) => ipcRenderer.invoke('copy-text', text),
+  readOcrModel: (relativePath) =>
+    ipcRenderer.invoke('read-ocr-model', relativePath),
   deleteImage: (filePath) => ipcRenderer.invoke('delete-image', filePath),
   showImageInFolder: (filePath) =>
     ipcRenderer.invoke('show-image-in-folder', filePath),

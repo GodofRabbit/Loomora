@@ -12,6 +12,7 @@ const prompt = ref(''),
   images = ref([]),
   imagePaths = ref([]),
   gallery = ref([]),
+  galleryLoading = ref(false),
   preview = ref(null),
   editorHost = ref(null),
   editorSource = ref(null),
@@ -21,6 +22,11 @@ const prompt = ref(''),
   mosaicActive = ref(false),
   mosaicSize = ref(28),
   mosaicOverlay = ref(null),
+  ocrOpen = ref(false),
+  ocrBusy = ref(false),
+  ocrLines = ref([]),
+  ocrError = ref(''),
+  ocrSourceName = ref(''),
   contextMenu = ref(null),
   scrollContainer = ref(null),
   scrollThumbTop = ref(0),
@@ -75,6 +81,11 @@ let scrollResizeObserver;
 let stopGenerationStatus;
 let imageEditor;
 let ImageEditorClass;
+let paddleOcr;
+let paddleOcrReady;
+let ocrFetchInstalled = false;
+let ocrRunId = 0;
+let ocrRunning = false;
 let mosaicPoints = [];
 let mosaicDrawing = false;
 let toastTimer;
@@ -118,6 +129,7 @@ function startScrollDrag(event) {
 }
 function closePreview() {
   preview.value = null;
+  closeOcr();
 }
 function showImageMenu(event, src, filePath = '', editable = false) {
   event.preventDefault();
@@ -215,6 +227,128 @@ function movePreview(step) {
   if (!preview.value?.items.length) return;
   const total = preview.value.items.length;
   preview.value.index = (preview.value.index + step + total) % total;
+  closeOcr();
+}
+
+function installLocalOcrFetch() {
+  if (ocrFetchInstalled) return;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input, options) => {
+    const url = new URL(
+      typeof input === 'string' ? input : input.url,
+      window.location.href,
+    );
+    if (url.hostname !== 'loomora-ocr.local') {
+      return originalFetch(input, options);
+    }
+    const relativePath = url.pathname.replace(/^\/models\/ocr\//, '');
+    const bytes = await window.forge.readOcrModel(relativePath);
+    return new Response(bytes, {
+      status: 200,
+      headers: {
+        'Content-Type': relativePath.endsWith('.json')
+          ? 'application/json'
+          : 'application/octet-stream',
+      },
+    });
+  };
+  ocrFetchInstalled = true;
+}
+
+async function ensureOcrReady() {
+  if (paddleOcrReady) return paddleOcrReady;
+  paddleOcrReady = (async () => {
+    installLocalOcrFetch();
+    globalThis.Module ||= {};
+    paddleOcr = await import('@paddlejs-models/ocr');
+    const modelRoot = 'https://loomora-ocr.local/models/ocr';
+    await paddleOcr.init(
+      `${modelRoot}/detection/model.json`,
+      `${modelRoot}/recognition/model.json`,
+    );
+  })().catch((error) => {
+    paddleOcrReady = undefined;
+    throw error;
+  });
+  return paddleOcrReady;
+}
+
+function loadOcrImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('无法读取待识别图片'));
+    image.src = src;
+  });
+}
+
+async function recognizeText(source, sourceName = '图片') {
+  if (!source || ocrRunning) return;
+  const runId = ++ocrRunId;
+  ocrRunning = true;
+  ocrOpen.value = true;
+  ocrBusy.value = true;
+  ocrLines.value = [];
+  ocrError.value = '';
+  ocrSourceName.value = sourceName;
+  try {
+    await ensureOcrReady();
+    const image = await loadOcrImage(source);
+    const result = await paddleOcr.recognize(image);
+    if (runId !== ocrRunId) return;
+    ocrLines.value = (
+      Array.isArray(result?.text) ? result.text : [result?.text]
+    )
+      .flat(Infinity)
+      .map((line) => String(line || '').trim())
+      .filter(Boolean);
+  } catch (error) {
+    if (runId !== ocrRunId) return;
+    console.error('PaddleOCR recognition failed', error);
+    ocrError.value = error?.message || '文字识别失败，请稍后重试';
+  } finally {
+    ocrRunning = false;
+    ocrBusy.value = false;
+  }
+}
+
+function recognizePreviewText() {
+  if (!currentPreview.value) return;
+  recognizeText(currentPreview.value.src, currentPreview.value.name);
+}
+
+function recognizeEditorText() {
+  if (!imageEditor || !editorSource.value) return;
+  recognizeText(
+    imageEditor.toDataURL({ format: 'png' }),
+    editorSource.value.name,
+  );
+}
+
+function recognizeContextText() {
+  if (!contextMenu.value) return;
+  const { src, filePath } = contextMenu.value;
+  contextMenu.value = null;
+  recognizeText(src, filePath?.split(/[\\/]/).pop() || '图片');
+}
+
+async function copyOcrText() {
+  const text = ocrLines.value.join('\n');
+  if (!text) return;
+  try {
+    await window.forge.copyText(text);
+    showToast('识别文字已复制');
+  } catch (error) {
+    showToast(error?.message || '复制文字失败', 'error');
+  }
+}
+
+function closeOcr() {
+  ocrRunId += 1;
+  ocrOpen.value = false;
+  ocrBusy.value = ocrRunning;
+  ocrLines.value = [];
+  ocrError.value = '';
 }
 const editorLocale = {
   Load: '加载',
@@ -536,6 +670,7 @@ function closeImageEditor(force = false) {
   editorOpen.value = false;
   editorSource.value = null;
   editorStatus.value = '';
+  closeOcr();
 }
 async function saveEditedImage() {
   if (!imageEditor || !editorSource.value?.filePath) return;
@@ -560,6 +695,10 @@ const currentPreview = computed(
 );
 function onKeydown(event) {
   if (event.key === 'Escape') {
+    if (ocrOpen.value) {
+      closeOcr();
+      return;
+    }
     if (editorOpen.value) {
       closeImageEditor();
       return;
@@ -593,7 +732,19 @@ onBeforeUnmount(() => {
 });
 async function openGallery() {
   view.value = 'gallery';
-  gallery.value = await window.forge.listGallery();
+  if (galleryLoading.value) return;
+  galleryLoading.value = true;
+  await nextTick();
+  try {
+    gallery.value = await window.forge.listGallery();
+  } catch (error) {
+    gallery.value = [];
+    status.value = error?.message || '作品库加载失败';
+    showToast(status.value, 'error');
+  } finally {
+    galleryLoading.value = false;
+    nextTick(updateScrollbar);
+  }
 }
 async function pick() {
   if (reference.value.length >= maxReferences.value) {
@@ -795,7 +946,9 @@ async function generate() {
           </div>
           <span>{{
             view === 'gallery'
-              ? `${gallery.length} 张本地作品`
+              ? galleryLoading
+                ? '正在读取本地作品...'
+                : `${gallery.length} 张本地作品`
               : images.length
                 ? `${images.length} 张作品`
                 : '生成的图片将在这里展示'
@@ -823,10 +976,13 @@ async function generate() {
         <div
           v-else
           class="gallery library-gallery"
-          :class="{ empty: !gallery.length }"
+          :class="{
+            empty: galleryLoading || !gallery.length,
+            loading: galleryLoading,
+          }"
         >
           <article
-            v-for="item in gallery"
+            v-for="item in galleryLoading ? [] : gallery"
             :key="item.path"
             class="gallery-card"
           >
@@ -841,7 +997,12 @@ async function generate() {
               ><small>{{ item.date }}</small>
             </div>
           </article>
-          <div v-if="!gallery.length" class="empty-state">
+          <div v-if="galleryLoading" class="gallery-loading" role="status">
+            <span class="gallery-loading-spinner"></span>
+            <b>正在加载作品库</b>
+            <small>正在读取本地图片，请稍候</small>
+          </div>
+          <div v-else-if="!gallery.length" class="empty-state">
             <span>✧</span><b>作品库还是空的</b
             ><small>生成的图片会自动出现在这里</small>
           </div>
@@ -855,14 +1016,24 @@ async function generate() {
       aria-modal="true"
       @click.self="closePreview"
     >
-      <button
-        v-if="currentPreview.editable && currentPreview.filePath"
-        class="lightbox-edit"
-        title="编辑图片"
-        @click="openImageEditor()"
-      >
-        编辑
-      </button>
+      <div class="lightbox-actions">
+        <button
+          class="lightbox-ocr"
+          :disabled="ocrBusy"
+          title="识别图片中的文字"
+          @click="recognizePreviewText"
+        >
+          {{ ocrBusy ? '识别中...' : '识别文字' }}
+        </button>
+        <button
+          v-if="currentPreview.editable && currentPreview.filePath"
+          class="lightbox-edit"
+          title="编辑图片"
+          @click="openImageEditor()"
+        >
+          编辑
+        </button>
+      </div>
       <button
         v-if="preview && preview.items.length > 1"
         class="lightbox-nav lightbox-prev"
@@ -940,6 +1111,14 @@ async function generate() {
           >
             {{ mosaicActive ? '关闭马赛克' : '马赛克' }}
           </button>
+          <button
+            class="ocr-editor-button"
+            :disabled="editorSaving || ocrBusy"
+            title="识别当前画面中的文字"
+            @click="recognizeEditorText"
+          >
+            {{ ocrBusy ? '识别中...' : '文字识别' }}
+          </button>
           <button :disabled="editorSaving" @click="closeImageEditor()">
             取消
           </button>
@@ -962,6 +1141,7 @@ async function generate() {
     >
       <button @click="copyContextImage"><span>▣</span>复制</button>
       <button @click="downloadContextImage"><span>↓</span>下载</button>
+      <button @click="recognizeContextText"><span>文</span>识别文字</button>
       <button v-if="contextMenu.editable" @click="editContextImage">
         <span>✎</span>编辑
       </button>
@@ -976,6 +1156,62 @@ async function generate() {
         <span>×</span>删除
       </button>
     </div>
+    <Transition name="ocr-drawer">
+      <div v-if="ocrOpen" class="ocr-drawer-layer" @click.self="closeOcr">
+        <aside
+          class="ocr-result-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="文字识别结果"
+          @click.stop
+        >
+          <header>
+            <div>
+              <b>文字识别</b>
+              <span>{{ ocrSourceName }}</span>
+            </div>
+            <button
+              title="关闭识别结果"
+              aria-label="关闭识别结果"
+              @click="closeOcr"
+            >
+              ×
+            </button>
+          </header>
+          <div class="ocr-result-body">
+            <div v-if="ocrBusy" class="ocr-result-state" role="status">
+              <span class="ocr-spinner"></span>
+              <b>正在识别文字</b>
+              <small>首次使用需要加载本地识别模型</small>
+            </div>
+            <div v-else-if="ocrError" class="ocr-result-state ocr-error">
+              <span>!</span>
+              <b>识别失败</b>
+              <small>{{ ocrError }}</small>
+            </div>
+            <div v-else-if="!ocrLines.length" class="ocr-result-state">
+              <span>文</span>
+              <b>未识别到文字</b>
+              <small>可尝试使用更清晰、文字方向更端正的图片</small>
+            </div>
+            <div v-else class="ocr-lines">
+              <p v-for="(line, index) in ocrLines" :key="`${index}-${line}`">
+                {{ line }}
+              </p>
+            </div>
+          </div>
+          <footer>
+            <span v-if="ocrLines.length"
+              >已识别 {{ ocrLines.length }} 段文字</span
+            >
+            <span v-else></span>
+            <button :disabled="!ocrLines.length" @click="copyOcrText">
+              复制全部
+            </button>
+          </footer>
+        </aside>
+      </div>
+    </Transition>
     <Transition name="toast">
       <div
         v-if="toast"
