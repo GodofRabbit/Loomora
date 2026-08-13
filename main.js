@@ -79,6 +79,24 @@ function galleryDir() {
   }
   return dir;
 }
+function galleryRoots() {
+  return [
+    path.resolve(
+      app.isPackaged ? path.dirname(process.execPath) : __dirname,
+      'Gallery',
+    ),
+    path.resolve(app.getPath('userData'), 'Gallery'),
+  ];
+}
+function isGalleryImage(filePath) {
+  const target = path.resolve(filePath || '');
+  return (
+    /\.(png|jpe?g|webp)$/i.test(target) &&
+    galleryRoots().some(
+      (root) => target.startsWith(`${root}${path.sep}`) && target !== root,
+    )
+  );
+}
 async function download(url, key) {
   const r = await fetch(url, { headers: headers(key) });
   if (!r.ok) throw new Error(`下载图片失败 (${r.status})`);
@@ -213,20 +231,85 @@ ipcMain.handle('copy-image', async (_event, src) => {
   return true;
 });
 
+ipcMain.handle('download-image', async (_event, payload) => {
+  const sourcePath = path.resolve(payload?.filePath || '');
+  let buffer;
+  let extension = 'png';
+  if (isGalleryImage(sourcePath) && fs.existsSync(sourcePath)) {
+    buffer = fs.readFileSync(sourcePath);
+    extension = path.extname(sourcePath).slice(1).toLowerCase() || 'png';
+  } else {
+    const dataUrl = String(payload?.src || '');
+    if (
+      !dataUrl.startsWith('data:image/') ||
+      dataUrl.length > 140 * 1024 * 1024
+    )
+      throw new Error('Invalid image data');
+    const image = nativeImage.createFromDataURL(dataUrl);
+    if (image.isEmpty()) throw new Error('Invalid image data');
+    const mime = dataUrl.match(/^data:image\/(png|jpeg|webp)/i)?.[1];
+    if (mime === 'jpeg') {
+      buffer = image.toJPEG(95);
+      extension = 'jpg';
+    } else {
+      buffer = image.toPNG();
+      extension = 'png';
+    }
+  }
+  const requestedName = path.basename(String(payload?.name || ''));
+  const fallbackName = `loomora-${Date.now()}.${extension}`;
+  const defaultName = requestedName
+    ? `${path.basename(requestedName, path.extname(requestedName))}.${extension}`
+    : fallbackName;
+  const result = await dialog.showSaveDialog({
+    title: '保存图片',
+    defaultPath: path.join(app.getPath('pictures'), defaultName),
+    filters: [
+      {
+        name: extension === 'jpg' ? 'JPEG 图片' : 'PNG 图片',
+        extensions: [extension],
+      },
+    ],
+  });
+  if (result.canceled || !result.filePath) return { saved: false };
+  const targetPath = path.extname(result.filePath)
+    ? result.filePath
+    : `${result.filePath}.${extension}`;
+  fs.writeFileSync(targetPath, buffer);
+  return { saved: true, path: targetPath };
+});
+
+ipcMain.handle('save-edited-image', async (_event, payload) => {
+  const sourcePath = path.resolve(payload?.sourcePath || '');
+  if (!isGalleryImage(sourcePath) || !fs.existsSync(sourcePath))
+    throw new Error('Invalid gallery image path');
+  const dataUrl = String(payload?.dataUrl || '');
+  if (!dataUrl.startsWith('data:image/') || dataUrl.length > 140 * 1024 * 1024)
+    throw new Error('Invalid edited image data');
+  const editedImage = nativeImage.createFromDataURL(dataUrl);
+  if (editedImage.isEmpty()) throw new Error('Invalid edited image data');
+  const buffer = editedImage.toPNG();
+  if (!buffer.length || buffer.length > 100 * 1024 * 1024)
+    throw new Error('Edited image is empty or too large');
+  const stem = path.basename(sourcePath, path.extname(sourcePath));
+  const file = path.join(
+    path.dirname(sourcePath),
+    `${stem}-edited-${Date.now()}.png`,
+  );
+  fs.writeFileSync(file, buffer, { flag: 'wx' });
+  const stat = fs.statSync(file);
+  return {
+    name: path.basename(file),
+    date: path.basename(path.dirname(file)),
+    path: file,
+    data: `data:image/png;base64,${buffer.toString('base64')}`,
+    createdAt: stat.mtimeMs,
+  };
+});
+
 ipcMain.handle('delete-image', async (_event, filePath) => {
   const target = path.resolve(filePath || '');
-  const roots = [
-    path.resolve(
-      app.isPackaged ? path.dirname(process.execPath) : __dirname,
-      'Gallery',
-    ),
-    path.resolve(app.getPath('userData'), 'Gallery'),
-  ];
-  const insideGallery = roots.some(
-    (root) => target.startsWith(`${root}${path.sep}`) && target !== root,
-  );
-  if (!insideGallery || !/\.(png|jpe?g|webp)$/i.test(target))
-    throw new Error('Invalid gallery image path');
+  if (!isGalleryImage(target)) throw new Error('Invalid gallery image path');
   if (!fs.existsSync(target)) return { deleted: false };
   const confirmation = await dialog.showMessageBox({
     type: 'warning',

@@ -94,6 +94,70 @@ body {
 .custom-scrollbar-thumb:active {
   cursor: default;
 }
+.app-toast {
+  position: fixed;
+  z-index: 300;
+  right: 24px;
+  bottom: 24px;
+  display: grid;
+  width: min(440px, calc(100vw - 48px));
+  min-height: 48px;
+  padding: 10px 10px 10px 14px;
+  grid-template-columns: 24px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #66537e;
+  border-radius: 8px;
+  background: rgba(21, 19, 33, 0.96);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+}
+.app-toast > span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  place-items: center;
+  background: #6541a9;
+  color: #fff;
+  font-size: 13px;
+}
+.app-toast p {
+  margin: 0;
+  overflow: hidden;
+  color: #eee9f7;
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-toast button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #aaa1b5;
+  font-size: 19px;
+}
+.app-toast-error {
+  border-color: #8e425c;
+}
+.app-toast-error > span {
+  background: #9b3e5d;
+}
+.toast-enter-active,
+.toast-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
 .aurora {
   position: absolute;
   pointer-events: none;
@@ -539,6 +603,151 @@ details summary {
 .lightbox-close:hover {
   background: #372456;
   box-shadow: 0 0 20px #825ce077;
+}
+.lightbox-edit {
+  position: fixed;
+  top: 20px;
+  right: 76px;
+  z-index: 3;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid #7654d9;
+  border-radius: 7px;
+  background: #3a226fcc;
+  color: #f2ecff;
+  font-weight: 700;
+}
+.lightbox-edit:hover:not(:disabled) {
+  background: #55308f;
+  box-shadow: 0 0 18px #8855ff66;
+}
+.image-editor-modal {
+  position: fixed;
+  z-index: 220;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 58px minmax(0, 1fr);
+  background: #080812;
+}
+.image-editor-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(151, 110, 255, 0.28);
+  align-items: center;
+  background: #11101e;
+}
+.image-editor-toolbar > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 12px;
+}
+.image-editor-toolbar b {
+  color: #f5f0ff;
+  font-size: 16px;
+}
+.image-editor-toolbar span {
+  overflow: hidden;
+  color: #958da4;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.image-editor-status {
+  max-width: 34vw;
+  color: #c2b3dd !important;
+}
+.image-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+.mosaic-size-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #b5adbf;
+  font-size: 12px;
+}
+.mosaic-size-control input {
+  width: 78px;
+  accent-color: #a273ff;
+}
+.mosaic-size-control b {
+  min-width: 38px;
+  color: #d9cfff;
+  font-size: 11px;
+  font-weight: 500;
+}
+.image-editor-actions button {
+  height: 36px;
+  padding: 0 15px;
+  border: 1px solid #484057;
+  border-radius: 6px;
+  background: #242231;
+  color: #ded8e8;
+}
+.image-editor-actions .mosaic-toggle {
+  border-color: #7452a8;
+  background: #2c2140;
+  color: #d8c8f3;
+}
+.image-editor-actions .mosaic-toggle.active {
+  border-color: #a273ff;
+  background: #6a42ad;
+  color: #fff;
+  box-shadow: 0 0 16px rgba(148, 95, 255, 0.35);
+}
+.image-editor-actions .save-edited-image {
+  border-color: #7751cc;
+  background: linear-gradient(135deg, #8f62e8, #6741b8);
+  color: #fff;
+  font-weight: 700;
+}
+.image-editor-host {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.mosaic-overlay {
+  position: absolute;
+  z-index: 5;
+  display: block;
+  pointer-events: none;
+}
+.mosaic-overlay.active {
+  cursor: crosshair;
+  pointer-events: auto;
+}
+.image-editor-host .tui-image-editor-container {
+  min-height: 100%;
+  background-color: #080812;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.image-editor-host .tui-image-editor-container button,
+.image-editor-host .tui-image-editor-container input,
+.image-editor-host .tui-image-editor-container label,
+.image-editor-host .tui-image-editor-container li {
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.image-editor-host .tui-image-editor-header {
+  display: none;
+}
+.image-editor-host .tui-image-editor-main {
+  top: 0;
+}
+.image-editor-host .tui-image-editor-menu {
+  background-color: #151321;
+}
+.image-editor-host .tui-image-editor-submenu {
+  background-color: #1b1828;
+}
+.image-editor-host .tui-image-editor-help-menu {
+  border-radius: 6px;
+  background-color: #1c1928;
 }
 @keyframes lightbox-in {
   from {

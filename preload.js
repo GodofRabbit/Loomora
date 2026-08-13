@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('forge', {
     return () => ipcRenderer.removeListener('generation-status', listener);
   },
   listGallery: () => ipcRenderer.invoke('list-gallery'),
+  saveEditedImage: (payload) =>
+    ipcRenderer.invoke('save-edited-image', payload),
+  downloadImage: (payload) => ipcRenderer.invoke('download-image', payload),
   copyImage: (src) => ipcRenderer.invoke('copy-image', src),
   deleteImage: (filePath) => ipcRenderer.invoke('delete-image', filePath),
   showImageInFolder: (filePath) =>

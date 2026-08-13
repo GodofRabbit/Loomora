@@ -1,5 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import 'tui-image-editor/dist/tui-image-editor.css';
+import 'tui-color-picker/dist/tui-color-picker.css';
 const DEFAULT_ENDPOINT = 'https://www.zexitongxue.com';
 const API_KEY_STORAGE = 'loomora-key';
 const ENDPOINT_STORAGE = 'loomora-endpoint';
@@ -11,12 +13,21 @@ const prompt = ref(''),
   imagePaths = ref([]),
   gallery = ref([]),
   preview = ref(null),
+  editorHost = ref(null),
+  editorSource = ref(null),
+  editorOpen = ref(false),
+  editorSaving = ref(false),
+  editorStatus = ref(''),
+  mosaicActive = ref(false),
+  mosaicSize = ref(28),
+  mosaicOverlay = ref(null),
   contextMenu = ref(null),
   scrollContainer = ref(null),
   scrollThumbTop = ref(0),
   scrollThumbHeight = ref(80),
   view = ref('create'),
   status = ref(''),
+  toast = ref(null),
   busy = ref(false),
   endpoint = ref(localStorage.getItem(ENDPOINT_STORAGE) || DEFAULT_ENDPOINT),
   model = ref('gpt-image-2'),
@@ -62,6 +73,18 @@ const maxReferences = computed(() => {
 const counter = computed(() => `${prompt.value.length}/800`);
 let scrollResizeObserver;
 let stopGenerationStatus;
+let imageEditor;
+let ImageEditorClass;
+let mosaicPoints = [];
+let mosaicDrawing = false;
+let toastTimer;
+function showToast(message, type = 'success') {
+  clearTimeout(toastTimer);
+  toast.value = { message, type };
+  toastTimer = setTimeout(() => {
+    toast.value = null;
+  }, 4000);
+}
 function updateScrollbar() {
   const el = scrollContainer.value;
   if (!el) return;
@@ -96,9 +119,15 @@ function startScrollDrag(event) {
 function closePreview() {
   preview.value = null;
 }
-function showImageMenu(event, src, filePath = '') {
+function showImageMenu(event, src, filePath = '', editable = false) {
   event.preventDefault();
-  contextMenu.value = { x: event.clientX, y: event.clientY, src, filePath };
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    src,
+    filePath,
+    editable,
+  };
 }
 async function deleteContextImage() {
   if (!contextMenu.value?.filePath) return;
@@ -140,12 +169,29 @@ async function copyContextImage() {
     contextMenu.value = null;
   }
 }
+async function downloadContextImage() {
+  if (!contextMenu.value) return;
+  const { src, filePath } = contextMenu.value;
+  const name = filePath ? filePath.split(/[\\/]/).pop() : '';
+  contextMenu.value = null;
+  try {
+    const result = await window.forge.downloadImage({ src, filePath, name });
+    if (result.saved) {
+      status.value = `图片已保存到 ${result.path}`;
+      showToast(`下载完成：${result.path}`);
+    }
+  } catch (error) {
+    status.value = error?.message || '图片下载失败';
+    showToast(status.value, 'error');
+  }
+}
 function previewItems() {
   return view.value === 'gallery'
     ? gallery.value.map((item) => ({
         src: item.data,
         name: item.name,
         filePath: item.path,
+        editable: true,
       }))
     : images.value.map((src, index) => ({
         src,
@@ -170,11 +216,354 @@ function movePreview(step) {
   const total = preview.value.items.length;
   preview.value.index = (preview.value.index + step + total) % total;
 }
+const editorLocale = {
+  Load: '加载',
+  Download: '下载',
+  Crop: '裁剪',
+  Flip: '翻转',
+  Rotate: '旋转',
+  Draw: '绘制',
+  Shape: '形状',
+  Icon: '图标',
+  Text: '文字',
+  Mask: '蒙版',
+  Filter: '滤镜',
+  Undo: '撤销',
+  Redo: '重做',
+  Reset: '重置',
+  Delete: '删除',
+  'Delete-all': '全部删除',
+  Apply: '应用',
+  Cancel: '取消',
+  Custom: '自定义',
+  Square: '正方形',
+  Rectangle: '矩形',
+  Circle: '圆形',
+  Triangle: '三角形',
+  'Flip X': '水平翻转',
+  'Flip Y': '垂直翻转',
+  'Lock Aspect Ratio': '锁定比例',
+  Width: '宽度',
+  Height: '高度',
+  Angle: '角度',
+  Free: '自由',
+  Straight: '直线',
+  Arrow: '箭头',
+  'Arrow-2': '箭头 2',
+  'Arrow-3': '箭头 3',
+  'Text size': '文字大小',
+  Bold: '粗体',
+  Italic: '斜体',
+  Underline: '下划线',
+  Stroke: '描边',
+  Fill: '填充',
+  Color: '颜色',
+  Range: '范围',
+  Grayscale: '灰度',
+  Invert: '反色',
+  Sepia: '棕褐色',
+  Sepia2: '棕褐色 2',
+  Blur: '模糊',
+  Sharpen: '锐化',
+  Emboss: '浮雕',
+  Noise: '噪点',
+  Pixelate: '像素化',
+  Brightness: '亮度',
+  'Color Filter': '颜色滤镜',
+  'Remove White': '去除白色',
+  Distance: '距离',
+  Threshold: '阈值',
+  Tint: '色调',
+  Multiply: '正片叠底',
+  Blend: '混合',
+  Opacity: '不透明度',
+  Left: '左对齐',
+  Center: '居中对齐',
+  Right: '右对齐',
+  Polygon: '多边形',
+  'Star-1': '星形 1',
+  'Star-2': '星形 2',
+  Heart: '心形',
+  Bubble: '气泡',
+  Location: '位置',
+  'Custom icon': '自定义图标',
+  'Load Mask Image': '加载蒙版图片',
+};
+function getEditorCanvasRect() {
+  const canvas = editorHost.value?.querySelector('.lower-canvas');
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  return rect.width && rect.height ? rect : null;
+}
+function ensureMosaicOverlay() {
+  if (mosaicOverlay.value || !editorHost.value) return;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'mosaic-overlay';
+  canvas.addEventListener('pointerdown', startMosaicStroke);
+  canvas.addEventListener('pointermove', continueMosaicStroke);
+  canvas.addEventListener('pointerup', finishMosaicStroke);
+  canvas.addEventListener('pointercancel', finishMosaicStroke);
+  editorHost.value.appendChild(canvas);
+  mosaicOverlay.value = canvas;
+}
+function clearMosaicOverlay() {
+  const canvas = mosaicOverlay.value;
+  if (!canvas) return;
+  canvas.width = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio));
+  canvas.height = Math.max(
+    1,
+    Math.round(canvas.clientHeight * devicePixelRatio),
+  );
+  const context = canvas.getContext('2d');
+  context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+}
+function updateMosaicOverlay() {
+  const overlay = mosaicOverlay.value;
+  const host = editorHost.value;
+  const rect = getEditorCanvasRect();
+  if (!overlay || !host || !rect) return;
+  const hostRect = host.getBoundingClientRect();
+  overlay.style.left = `${rect.left - hostRect.left}px`;
+  overlay.style.top = `${rect.top - hostRect.top}px`;
+  overlay.style.width = `${rect.width}px`;
+  overlay.style.height = `${rect.height}px`;
+  clearMosaicOverlay();
+}
+function toggleMosaic() {
+  mosaicActive.value = !mosaicActive.value;
+  mosaicOverlay.value?.classList.toggle('active', mosaicActive.value);
+  editorStatus.value = mosaicActive.value
+    ? '马赛克画笔已开启，拖动图片进行涂抹'
+    : '';
+  nextTick(updateMosaicOverlay);
+}
+function drawMosaicPreview() {
+  const canvas = mosaicOverlay.value;
+  if (!canvas || !mosaicPoints.length) return;
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  context.beginPath();
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.lineWidth = mosaicSize.value;
+  context.strokeStyle = 'rgba(166, 120, 255, 0.42)';
+  context.moveTo(mosaicPoints[0].x, mosaicPoints[0].y);
+  for (const point of mosaicPoints.slice(1)) context.lineTo(point.x, point.y);
+  context.stroke();
+  const last = mosaicPoints[mosaicPoints.length - 1];
+  context.beginPath();
+  context.arc(last.x, last.y, mosaicSize.value / 2, 0, Math.PI * 2);
+  context.fillStyle = 'rgba(181, 143, 255, 0.25)';
+  context.fill();
+}
+function addMosaicPoint(event) {
+  const rect = mosaicOverlay.value?.getBoundingClientRect();
+  if (!rect) return;
+  mosaicPoints.push({
+    x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+    y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+  });
+  drawMosaicPreview();
+}
+function startMosaicStroke(event) {
+  if (!mosaicActive.value || editorSaving.value) return;
+  mosaicDrawing = true;
+  mosaicPoints = [];
+  mosaicOverlay.value?.setPointerCapture?.(event.pointerId);
+  addMosaicPoint(event);
+}
+function continueMosaicStroke(event) {
+  if (!mosaicDrawing) return;
+  addMosaicPoint(event);
+}
+function interpolateMosaicPoints(points) {
+  const result = [];
+  for (let i = 0; i < points.length; i++) {
+    const current = points[i];
+    const previous = points[i - 1];
+    if (!previous) {
+      result.push(current);
+      continue;
+    }
+    const distance = Math.hypot(current.x - previous.x, current.y - previous.y);
+    const steps = Math.max(
+      1,
+      Math.ceil(distance / Math.max(4, mosaicSize.value / 3)),
+    );
+    for (let step = 1; step <= steps; step++) {
+      const ratio = step / steps;
+      result.push({
+        x: previous.x + (current.x - previous.x) * ratio,
+        y: previous.y + (current.y - previous.y) * ratio,
+      });
+    }
+  }
+  return result;
+}
+async function applyMosaicStroke() {
+  const rect = getEditorCanvasRect();
+  if (!rect || !mosaicPoints.length || !imageEditor) return;
+  const source = new Image();
+  source.src = imageEditor.toDataURL({ format: 'png' });
+  await new Promise((resolve, reject) => {
+    source.onload = resolve;
+    source.onerror = reject;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = source.naturalWidth;
+  canvas.height = source.naturalHeight;
+  const context = canvas.getContext('2d');
+  context.drawImage(source, 0, 0);
+  const original = context.getImageData(0, 0, canvas.width, canvas.height);
+  const output = context.createImageData(original);
+  output.data.set(original.data);
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const radius = Math.max(8, (mosaicSize.value * (scaleX + scaleY)) / 2);
+  const block = Math.max(6, Math.round(radius / 2.2));
+  for (const point of interpolateMosaicPoints(mosaicPoints)) {
+    const centerX = Math.round(point.x * scaleX);
+    const centerY = Math.round(point.y * scaleY);
+    const left = Math.max(0, Math.floor(centerX - radius));
+    const right = Math.min(canvas.width - 1, Math.ceil(centerX + radius));
+    const top = Math.max(0, Math.floor(centerY - radius));
+    const bottom = Math.min(canvas.height - 1, Math.ceil(centerY + radius));
+    for (let y = top; y <= bottom; y += block) {
+      for (let x = left; x <= right; x += block) {
+        const sampleX = Math.min(canvas.width - 1, x + Math.floor(block / 2));
+        const sampleY = Math.min(canvas.height - 1, y + Math.floor(block / 2));
+        if (Math.hypot(sampleX - centerX, sampleY - centerY) > radius) continue;
+        const sample = (sampleY * canvas.width + sampleX) * 4;
+        for (let yy = y; yy < Math.min(y + block, canvas.height); yy++) {
+          for (let xx = x; xx < Math.min(x + block, canvas.width); xx++) {
+            const target = (yy * canvas.width + xx) * 4;
+            output.data[target] = original.data[sample];
+            output.data[target + 1] = original.data[sample + 1];
+            output.data[target + 2] = original.data[sample + 2];
+            output.data[target + 3] = original.data[sample + 3];
+          }
+        }
+      }
+    }
+  }
+  context.putImageData(output, 0, 0);
+  await imageEditor.loadImageFromURL(
+    canvas.toDataURL('image/png'),
+    editorSource.value.name,
+  );
+  mosaicPoints = [];
+  clearMosaicOverlay();
+  updateMosaicOverlay();
+}
+async function finishMosaicStroke(event) {
+  if (!mosaicDrawing) return;
+  mosaicDrawing = false;
+  mosaicOverlay.value?.releasePointerCapture?.(event.pointerId);
+  try {
+    await applyMosaicStroke();
+  } catch (error) {
+    editorStatus.value = error?.message || '马赛克处理失败';
+    mosaicPoints = [];
+    clearMosaicOverlay();
+  }
+}
+async function openImageEditor(source = currentPreview.value) {
+  if (!source?.editable || !source.filePath) return;
+  editorSource.value = { ...source };
+  editorStatus.value = '正在加载编辑器...';
+  closePreview();
+  editorOpen.value = true;
+  await nextTick();
+  try {
+    if (!ImageEditorClass) {
+      const module = await import('tui-image-editor');
+      ImageEditorClass = module.default || module;
+    }
+    imageEditor = new ImageEditorClass(editorHost.value, {
+      includeUI: {
+        loadImage: {
+          path: editorSource.value.src,
+          name: editorSource.value.name,
+        },
+        locale: editorLocale,
+        menu: [
+          'crop',
+          'flip',
+          'rotate',
+          'draw',
+          'shape',
+          'icon',
+          'text',
+          'filter',
+        ],
+        initMenu: 'filter',
+        uiSize: { width: '100%', height: '100%' },
+        menuBarPosition: 'bottom',
+      },
+      cssMaxWidth: Math.max(640, window.innerWidth - 100),
+      cssMaxHeight: Math.max(400, window.innerHeight - 270),
+      usageStatistics: false,
+    });
+    editorStatus.value = '';
+    await nextTick();
+    ensureMosaicOverlay();
+    updateMosaicOverlay();
+  } catch (error) {
+    status.value = error?.message || '图片编辑器加载失败';
+    closeImageEditor(true);
+  }
+}
+function editContextImage() {
+  if (!contextMenu.value?.editable) return;
+  const source = {
+    src: contextMenu.value.src,
+    name: contextMenu.value.filePath.split(/[\\/]/).pop(),
+    filePath: contextMenu.value.filePath,
+    editable: true,
+  };
+  contextMenu.value = null;
+  openImageEditor(source);
+}
+function closeImageEditor(force = false) {
+  if (editorSaving.value && !force) return;
+  imageEditor?.destroy();
+  imageEditor = undefined;
+  mosaicActive.value = false;
+  mosaicOverlay.value = null;
+  mosaicPoints = [];
+  mosaicDrawing = false;
+  editorOpen.value = false;
+  editorSource.value = null;
+  editorStatus.value = '';
+}
+async function saveEditedImage() {
+  if (!imageEditor || !editorSource.value?.filePath) return;
+  editorSaving.value = true;
+  editorStatus.value = '正在保存新图片...';
+  try {
+    const item = await window.forge.saveEditedImage({
+      sourcePath: editorSource.value.filePath,
+      dataUrl: imageEditor.toDataURL({ format: 'png' }),
+    });
+    gallery.value = [item, ...gallery.value];
+    status.value = `已另存为 ${item.name}`;
+    closeImageEditor(true);
+  } catch (error) {
+    editorStatus.value = error?.message || '保存编辑图片失败';
+  } finally {
+    editorSaving.value = false;
+  }
+}
 const currentPreview = computed(
   () => preview.value?.items[preview.value.index],
 );
 function onKeydown(event) {
   if (event.key === 'Escape') {
+    if (editorOpen.value) {
+      closeImageEditor();
+      return;
+    }
     contextMenu.value = null;
     closePreview();
   }
@@ -184,6 +573,7 @@ function onKeydown(event) {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('resize', updateScrollbar);
+  window.addEventListener('resize', updateMosaicOverlay);
   scrollResizeObserver = new ResizeObserver(updateScrollbar);
   scrollResizeObserver.observe(scrollContainer.value);
   scrollResizeObserver.observe(scrollContainer.value.querySelector('main'));
@@ -195,8 +585,11 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('resize', updateScrollbar);
+  window.removeEventListener('resize', updateMosaicOverlay);
   scrollResizeObserver?.disconnect();
   stopGenerationStatus?.();
+  imageEditor?.destroy();
+  clearTimeout(toastTimer);
 });
 async function openGallery() {
   view.value = 'gallery';
@@ -441,7 +834,7 @@ async function generate() {
               :src="item.data"
               :alt="item.name"
               @click="openPreview(item, gallery.indexOf(item))"
-              @contextmenu="showImageMenu($event, item.data, item.path)"
+              @contextmenu="showImageMenu($event, item.data, item.path, true)"
             />
             <div class="gallery-card-meta">
               <b>{{ item.name }}</b
@@ -462,6 +855,14 @@ async function generate() {
       aria-modal="true"
       @click.self="closePreview"
     >
+      <button
+        v-if="currentPreview.editable && currentPreview.filePath"
+        class="lightbox-edit"
+        title="编辑图片"
+        @click="openImageEditor()"
+      >
+        编辑
+      </button>
       <button
         v-if="preview && preview.items.length > 1"
         class="lightbox-nav lightbox-prev"
@@ -491,7 +892,12 @@ async function generate() {
           :src="currentPreview.src"
           :alt="currentPreview.name"
           @contextmenu="
-            showImageMenu($event, currentPreview.src, currentPreview.filePath)
+            showImageMenu(
+              $event,
+              currentPreview.src,
+              currentPreview.filePath,
+              currentPreview.editable,
+            )
           "
         />
         <figcaption>
@@ -501,12 +907,64 @@ async function generate() {
       </figure>
     </div>
     <div
+      v-if="editorOpen"
+      class="image-editor-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="图片编辑器"
+    >
+      <header class="image-editor-toolbar">
+        <div>
+          <b>编辑图片</b>
+          <span>{{ editorSource.name }}</span>
+        </div>
+        <span class="image-editor-status">{{ editorStatus }}</span>
+        <div class="image-editor-actions">
+          <label class="mosaic-size-control" title="调整马赛克笔刷大小">
+            <span>笔刷</span>
+            <input
+              v-model.number="mosaicSize"
+              type="range"
+              min="12"
+              max="72"
+              step="2"
+            />
+            <b>{{ mosaicSize }}px</b>
+          </label>
+          <button
+            class="mosaic-toggle"
+            :class="{ active: mosaicActive }"
+            :disabled="editorSaving"
+            title="拖动涂抹局部区域"
+            @click="toggleMosaic"
+          >
+            {{ mosaicActive ? '关闭马赛克' : '马赛克' }}
+          </button>
+          <button :disabled="editorSaving" @click="closeImageEditor()">
+            取消
+          </button>
+          <button
+            class="save-edited-image"
+            :disabled="editorSaving"
+            @click="saveEditedImage"
+          >
+            {{ editorSaving ? '保存中...' : '另存为新图' }}
+          </button>
+        </div>
+      </header>
+      <div ref="editorHost" class="image-editor-host"></div>
+    </div>
+    <div
       v-if="contextMenu"
       class="image-context-menu"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
       @click.stop
     >
       <button @click="copyContextImage"><span>▣</span>复制</button>
+      <button @click="downloadContextImage"><span>↓</span>下载</button>
+      <button v-if="contextMenu.editable" @click="editContextImage">
+        <span>✎</span>编辑
+      </button>
       <button v-if="contextMenu.filePath" @click="showContextImageInFolder">
         <span>↗</span>打开文件所在位置
       </button>
@@ -518,6 +976,20 @@ async function generate() {
         <span>×</span>删除
       </button>
     </div>
+    <Transition name="toast">
+      <div
+        v-if="toast"
+        class="app-toast"
+        :class="`app-toast-${toast.type}`"
+        role="status"
+      >
+        <span>{{ toast.type === 'success' ? '✓' : '!' }}</span>
+        <p>{{ toast.message }}</p>
+        <button title="关闭提示" aria-label="关闭提示" @click="toast = null">
+          ×
+        </button>
+      </div>
+    </Transition>
     <div class="custom-scrollbar" aria-hidden="true">
       <div
         class="custom-scrollbar-thumb"
