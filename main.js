@@ -1,4 +1,12 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  clipboard,
+  nativeImage,
+  shell,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -10,6 +18,34 @@ const GPT_IMAGE_SIZES = {
   '3:4': '1024x1536',
   '3:2': '1536x1024',
 };
+const GPT_IMAGE_SIZE_VALUES = new Set([
+  '1024x1024',
+  '1536x1024',
+  '1024x1536',
+  '2048x1152',
+  '3840x2160',
+  '2160x3840',
+  'auto',
+]);
+const MODEL_ALIASES = {
+  'dall-e': 'gpt-image-2',
+  'dall-e-2': 'gpt-image-2',
+  'dall-e-3': 'grok-imagine-image-pro',
+  'nano-banana': 'gemini-3.1-flash-image-preview',
+  'nano-banana2': 'gemini-3.1-flash-image-preview',
+  'nano-banana-2': 'gemini-3.1-flash-image-preview',
+  'nano-banana-pro': 'gemini-3-pro-image-preview',
+  'grok-imagine-image-quality': 'grok-imagine-image-pro',
+};
+const normalizeModel = (model) => MODEL_ALIASES[model] || model;
+function referenceLimit(model) {
+  if (model === 'gpt-image-2') return 14;
+  if (model.startsWith('gemini-')) return 4;
+  if (model === 'grok-imagine-image-edit') return 3;
+  if (model === 'grok-imagine-image-lite') return 0;
+  if (model.startsWith('grok-imagine-image')) return 1;
+  return 14;
+}
 const headers = (key, json = false) => ({
   Authorization: `Bearer ${key}`,
   ...(json ? { 'Content-Type': 'application/json' } : {}),
@@ -170,7 +206,54 @@ ipcMain.handle('list-gallery', async () => {
   return files.sort((a, b) => b.createdAt - a.createdAt);
 });
 
-async function generateOne(p, batchIndex = 0) {
+ipcMain.handle('copy-image', async (_event, src) => {
+  const image = nativeImage.createFromDataURL(src);
+  if (image.isEmpty()) throw new Error('Unable to copy image');
+  clipboard.writeImage(image);
+  return true;
+});
+
+ipcMain.handle('delete-image', async (_event, filePath) => {
+  const target = path.resolve(filePath || '');
+  const roots = [
+    path.resolve(
+      app.isPackaged ? path.dirname(process.execPath) : __dirname,
+      'Gallery',
+    ),
+    path.resolve(app.getPath('userData'), 'Gallery'),
+  ];
+  const insideGallery = roots.some(
+    (root) => target.startsWith(`${root}${path.sep}`) && target !== root,
+  );
+  if (!insideGallery || !/\.(png|jpe?g|webp)$/i.test(target))
+    throw new Error('Invalid gallery image path');
+  if (!fs.existsSync(target)) return { deleted: false };
+  const confirmation = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['删除', '取消'],
+    defaultId: 1,
+    cancelId: 1,
+    title: '删除图片',
+    message: '确定要永久删除这张图片吗？',
+    detail: path.basename(target),
+  });
+  if (confirmation.response !== 0) return { deleted: false };
+  fs.unlinkSync(target);
+  return { deleted: true };
+});
+
+ipcMain.handle('show-image-in-folder', async (_event, filePath) => {
+  const target = path.resolve(filePath || '');
+  if (!fs.existsSync(target)) throw new Error('Image file not found');
+  shell.showItemInFolder(target);
+  return true;
+});
+
+async function generateOne(p, batchIndex, event) {
+  const report = (message) => {
+    if (!event.sender.isDestroyed())
+      event.sender.send('generation-status', message);
+  };
   console.log('[Loomora] generate IPC received', {
     endpoint: p?.endpoint,
     model: p?.model,
@@ -184,26 +267,47 @@ async function generateOne(p, batchIndex = 0) {
   try {
     const endpoint = new URL(p.endpoint || 'https://www.zexitongxue.com');
     base = endpoint.origin;
-    const model = p.model?.trim() || 'gpt-image-2';
-    const isGptImage = model === 'gpt-image-2' || /^dall-e(?:-|$)/.test(model);
-    const isGemini =
-      model.startsWith('gemini-') || model.startsWith('nano-banana');
+    const model = normalizeModel(p.model?.trim() || 'gpt-image-2');
+    const isGptImage = model === 'gpt-image-2';
+    const isGemini = model.startsWith('gemini-');
+    const references = Array.isArray(p.reference) ? p.reference : [];
+    const maxReferences = referenceLimit(model);
+    if (references.length > maxReferences)
+      throw new Error(
+        `${model} supports at most ${maxReferences} reference image${maxReferences === 1 ? '' : 's'}`,
+      );
+    const size = isGptImage
+      ? GPT_IMAGE_SIZE_VALUES.has(p.size)
+        ? p.size
+        : GPT_IMAGE_SIZES[p.aspect] || '1024x1024'
+      : (p.size && p.size.includes(':') ? p.size : p.aspect) || '1:1';
+    const gptQuality = ['low', 'medium', 'high', 'auto'].includes(p.quality)
+      ? p.quality
+      : 'auto';
+    const geminiQuality = ['1K', '2K', '4K'].includes(p.quality)
+      ? p.quality
+      : '2K';
     const body = {
       model,
       prompt: p.prompt.trim(),
-      size: isGptImage
-        ? p.size || GPT_IMAGE_SIZES[p.aspect] || '1024x1024'
-        : (p.size && p.size.includes(':') ? p.size : p.aspect) || '1:1',
+      size,
       ...(isGptImage
-        ? { quality: p.quality || 'auto' }
+        ? { quality: gptQuality }
         : isGemini
-          ? { quality: p.quality || '2K' }
+          ? { quality: geminiQuality === '4K' ? '2K' : geminiQuality }
           : {}),
       n: 1,
     };
-    if (p.reference?.length) {
-      const references = p.reference.map((x) => x.data);
-      body.image_url = references.length === 1 ? references[0] : references;
+    if (isGemini && geminiQuality === '4K') {
+      body.extra_body = {
+        google: {
+          image_config: { aspect_ratio: size, image_size: '4K' },
+        },
+      };
+    }
+    if (references.length) {
+      const imageUrls = references.map((x) => x.data);
+      body.image_url = imageUrls.length === 1 ? imageUrls[0] : imageUrls;
     }
     const requestUrl = `${base}/v1/images/generations/async`;
     console.log(
@@ -211,11 +315,14 @@ async function generateOne(p, batchIndex = 0) {
       requestUrl,
       JSON.stringify(body),
     );
-    const res = await fetch(requestUrl, {
-        method: 'POST',
-        headers: headers(p.apiKey, true),
-        body: JSON.stringify(body),
-      }),
+    report(`Sending request ${batchIndex + 1}...`);
+    const response = fetch(requestUrl, {
+      method: 'POST',
+      headers: headers(p.apiKey, true),
+      body: JSON.stringify(body),
+    });
+    report(`Request ${batchIndex + 1} sent`);
+    const res = await response,
       text = await res.text();
     console.log('[Loomora] image response', res.status, res.statusText);
     console.log('[Loomora] image response body', text.slice(0, 2000));
@@ -239,12 +346,13 @@ async function generateOne(p, batchIndex = 0) {
       };
     }
     let last = {};
+    report(`Request ${batchIndex + 1} accepted; generating image...`);
     for (let i = 0; i < 200; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       const q = await fetch(`${base}/v1/images/tasks/${taskId}`, {
         headers: headers(p.apiKey),
       });
-      console.log('[Loomora] image request sent', res.status);
+      console.log('[Loomora] task response', q.status);
       const queryText = await q.text();
       try {
         last = JSON.parse(queryText);
@@ -280,19 +388,13 @@ async function generateOne(p, batchIndex = 0) {
   }
 }
 
-ipcMain.handle('generate', async (_e, p) => {
+ipcMain.handle('generate', async (event, p) => {
   const total = Math.min(4, Math.max(1, Number(p.count) || 1));
-  console.log(`[Loomora] starting ${total} concurrent generation request(s)`);
-  const results = await Promise.all(
-    Array.from({ length: total }, (_, index) =>
-      (async () => {
-        if (index > 0) {
-          await new Promise((resolve) => setTimeout(resolve, index * 1000));
-        }
-        return generateOne(p, index);
-      })(),
-    ),
-  );
+  console.log(`[Loomora] starting ${total} generation request(s)`);
+  const results = [];
+  for (let index = 0; index < total; index++) {
+    results.push(await generateOne(p, index, event));
+  }
   const successful = results.filter((result) => result.ok);
   const failed = results
     .map((result, index) => ({ result, index }))
