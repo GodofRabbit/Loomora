@@ -32,6 +32,7 @@ const prompt = ref(''),
   scrollThumbTop = ref(0),
   scrollThumbHeight = ref(80),
   view = ref('create'),
+  settingsOpen = ref(false),
   status = ref(''),
   toast = ref(null),
   busy = ref(false),
@@ -40,6 +41,8 @@ const prompt = ref(''),
   resolution = ref('2048x1152'),
   quality = ref('auto'),
   apiKey = ref(localStorage.getItem(API_KEY_STORAGE) || '');
+const settingsEndpoint = ref(endpoint.value);
+const settingsApiKey = ref(apiKey.value);
 const ratios = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2'];
 const gptSizes = [
   '1024x1024',
@@ -695,6 +698,10 @@ const currentPreview = computed(
 );
 function onKeydown(event) {
   if (event.key === 'Escape') {
+    if (settingsOpen.value) {
+      closeSettings();
+      return;
+    }
     if (ocrOpen.value) {
       closeOcr();
       return;
@@ -757,12 +764,22 @@ async function pick() {
 function removeRef(i) {
   reference.value.splice(i, 1);
 }
+function openSettings() {
+  settingsEndpoint.value = endpoint.value;
+  settingsApiKey.value = apiKey.value;
+  settingsOpen.value = true;
+}
+function closeSettings() {
+  settingsOpen.value = false;
+}
 function save() {
-  endpoint.value = endpoint.value.trim() || DEFAULT_ENDPOINT;
-  apiKey.value = apiKey.value.trim();
+  endpoint.value = settingsEndpoint.value.trim() || DEFAULT_ENDPOINT;
+  apiKey.value = settingsApiKey.value.trim();
   localStorage.setItem(API_KEY_STORAGE, apiKey.value);
   localStorage.setItem(ENDPOINT_STORAGE, endpoint.value);
+  closeSettings();
   status.value = '配置已保存';
+  showToast('配置已保存');
 }
 async function generate() {
   if (!prompt.value.trim()) {
@@ -819,6 +836,7 @@ async function generate() {
     @scroll="updateScrollbar"
     @click="contextMenu = null"
   >
+    <div class="window-titlebar" aria-hidden="true"></div>
     <div class="aurora a1"></div>
     <div class="aurora a2"></div>
     <header class="topbar">
@@ -830,7 +848,19 @@ async function generate() {
           >作品库</a
         ><a>灵感广场</a>
       </nav>
-      <button class="config-btn" @click="save">保存配置</button>
+      <button
+        class="config-btn"
+        title="打开接口设置"
+        aria-label="打开接口设置"
+        @click="openSettings"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.12 2.12-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V20h-3v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06-2.12-2.12.06-.06A1.65 1.65 0 0 0 7.1 15a1.65 1.65 0 0 0-1.51-1H5.5v-3h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.12-2.12.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V4.7h3v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06 2.12 2.12-.06.06a1.65 1.65 0 0 0-.33 1.82v.08A1.65 1.65 0 0 0 20.91 11H21v3h-.09A1.65 1.65 0 0 0 19.4 15Z"
+          />
+        </svg>
+      </button>
     </header>
     <main>
       <section v-if="view === 'create'" class="intro">
@@ -919,16 +949,6 @@ async function generate() {
             ✦ {{ busy ? '生成中…' : '生成' }}
           </button>
         </div>
-        <details>
-          <summary>接口设置</summary>
-          <div class="settings">
-            <input v-model="endpoint" placeholder="API 地址" /><input
-              v-model="apiKey"
-              type="password"
-              placeholder="API Key"
-            />
-          </div>
-        </details>
       </section>
       <section class="works" :class="{ 'library-view': view === 'gallery' }">
         <div class="works-head">
@@ -969,7 +989,8 @@ async function generate() {
             "
           />
           <div v-if="!images.length" class="empty-state">
-            <span>✧</span><b>织一束光，生成第一幅作品</b
+            <span class="create-empty-icon">✧</span
+            ><b>织一束光，生成第一幅作品</b
             ><small>输入提示词，也可以添加一张参考图</small>
           </div>
         </div>
@@ -1210,6 +1231,53 @@ async function generate() {
             </button>
           </footer>
         </aside>
+      </div>
+    </Transition>
+    <Transition name="settings-modal">
+      <div
+        v-if="settingsOpen"
+        class="settings-modal-layer"
+        @click.self="closeSettings"
+      >
+        <section
+          class="settings-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="接口设置"
+          @click.stop
+        >
+          <header>
+            <div>
+              <b>接口设置</b>
+              <span>配置图片生成服务</span>
+            </div>
+            <button
+              title="关闭设置"
+              aria-label="关闭设置"
+              @click="closeSettings"
+            >
+              ×
+            </button>
+          </header>
+          <div class="settings-modal-body">
+            <label>
+              <span>网站地址</span>
+              <input v-model="settingsEndpoint" placeholder="API 地址" />
+            </label>
+            <label>
+              <span>API Key</span>
+              <input
+                v-model="settingsApiKey"
+                type="password"
+                placeholder="请输入 API Key"
+              />
+            </label>
+          </div>
+          <footer>
+            <button class="settings-cancel" @click="closeSettings">取消</button>
+            <button class="settings-save" @click="save">保存配置</button>
+          </footer>
+        </section>
       </div>
     </Transition>
     <Transition name="toast">
