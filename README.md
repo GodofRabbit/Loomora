@@ -175,24 +175,31 @@ Content-Type: application/json
 | 文字识别     | Paddle.js OCR           |
 | Windows 打包 | electron-builder + NSIS |
 
-Electron 主进程负责网络请求、本地文件读写、系统对话框和剪贴板操作。渲染进程通过启用 `contextIsolation` 的预加载桥接调用这些能力，未开启 Node.js 集成。
+Electron 主进程负责窗口生命周期，并将图片生成和图库文件能力拆分到独立模块。渲染进程通过启用 `contextIsolation` 的预加载桥接调用这些能力，未开启 Node.js 集成。
 
 ## 项目结构
 
 ```text
 Loomora/
-├── main.js                         # Electron 主进程、生成请求与本地文件 IPC
+├── electron/
+│   ├── gallery.js                  # 图库文件、系统对话框与相关 IPC
+│   └── generation.js               # 图片生成请求与异步任务轮询
+├── main.js                         # Electron 窗口生命周期
 ├── preload.js                      # 安全的渲染进程能力桥接
 ├── package.json                    # 项目依赖、脚本和打包配置
 ├── vite.config.mjs                 # Vite 配置
+├── index.html                      # Vite 页面入口
 ├── renderer/
 │   ├── assets/                     # 界面图片资源
 │   ├── public/models/ocr/          # 本地 PaddleOCR 模型
 │   ├── src/
-│   │   ├── App.vue                 # 应用界面与交互逻辑
+│   │   ├── components/              # 页面与弹层组件
+│   │   ├── composables/             # 生成、编辑器与 OCR 状态逻辑
+│   │   ├── config/                  # 模型和编辑器配置
+│   │   ├── utils/                   # 无状态工具函数
+│   │   ├── App.vue                  # 应用状态协调层
 │   │   └── main.js                 # Vue 入口
-│   ├── index.html                  # 渲染进程 HTML
-│   └── style.css                   # 全局界面样式
+│   └── styles/                     # 按功能拆分的全局样式
 └── renderer-dist/                  # 前端构建输出（构建后生成）
 ```
 

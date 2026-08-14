@@ -1,0 +1,299 @@
+.lightbox {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 56px;
+  background: #050510e8;
+  backdrop-filter: blur(14px);
+  animation: lightbox-in 0.18s ease-out;
+}
+.lightbox figure {
+  display: flex;
+  max-width: min(92vw, 1500px);
+  max-height: calc(100vh - 80px);
+  margin: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.lightbox img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  object-fit: contain;
+  border: 1px solid #7759bd;
+  border-radius: 8px;
+  box-shadow:
+    0 24px 80px #000c,
+    0 0 35px #6d42c955;
+}
+.lightbox figcaption {
+  max-width: 80vw;
+  overflow: hidden;
+  color: #bdb5cf;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lightbox-close {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid #71618e;
+  border-radius: 50%;
+  background: #191526cc;
+  color: #f4efff;
+  font-size: 25px;
+  line-height: 1;
+}
+.lightbox-nav {
+  position: fixed;
+  top: 50%;
+  z-index: 2;
+  width: 46px;
+  height: 70px;
+  border: 1px solid #7863a8;
+  border-radius: 10px;
+  background: #191526cc;
+  color: #f4efff;
+  font-size: 42px;
+  line-height: 1;
+  transform: translateY(-50%);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+.lightbox-nav:hover:not(:disabled) {
+  background: #3a2660;
+  border-color: #ad91ef;
+  box-shadow: 0 0 22px #825ce077;
+}
+.lightbox-prev {
+  left: 24px;
+}
+.lightbox-prev:hover:not(:disabled) {
+  transform: translate(-3px, -50%);
+}
+.lightbox-next {
+  right: 24px;
+}
+.lightbox-next:hover:not(:disabled) {
+  transform: translate(3px, -50%);
+}
+.image-context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid #4f416c;
+  border-radius: 8px;
+  background: #151321f2;
+  box-shadow:
+    0 14px 38px #000a,
+    0 0 18px #6343a733;
+  backdrop-filter: blur(14px);
+}
+.image-context-menu button {
+  display: flex;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  color: #eee9f8;
+  font-size: 13px;
+  text-align: left;
+}
+.image-context-menu button:hover {
+  transform: none;
+  background: #362757;
+}
+.image-context-menu button span {
+  color: #a98bff;
+}
+.image-context-menu button.danger {
+  color: #ffb5c3;
+}
+.image-context-menu button.danger:hover {
+  background: #502035;
+}
+.image-context-menu button.danger span {
+  color: #ff6f91;
+}
+.lightbox-close:hover {
+  background: #372456;
+  box-shadow: 0 0 20px #825ce077;
+}
+.lightbox-actions {
+  position: fixed;
+  top: 20px;
+  right: 76px;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+}
+.lightbox-actions button {
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid #7654d9;
+  border-radius: 7px;
+  background: #3a226fcc;
+  color: #f2ecff;
+  font-weight: 700;
+}
+.lightbox-actions button:hover:not(:disabled) {
+  background: #55308f;
+  box-shadow: 0 0 18px #8855ff66;
+}
+.lightbox-actions button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.lightbox-actions .lightbox-ocr {
+  border-color: #477e82;
+  background: #153b3dcc;
+  color: #d8ffff;
+}
+.image-editor-modal {
+  position: fixed;
+  z-index: 220;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 58px minmax(0, 1fr);
+  background: #080812;
+}
+.image-editor-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(151, 110, 255, 0.28);
+  align-items: center;
+  background: #11101e;
+}
+.image-editor-toolbar > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 12px;
+}
+.image-editor-toolbar b {
+  color: #f5f0ff;
+  font-size: 16px;
+}
+.image-editor-toolbar span {
+  overflow: hidden;
+  color: #958da4;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.image-editor-status {
+  max-width: 34vw;
+  color: #c2b3dd !important;
+}
+.image-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+.mosaic-size-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #b5adbf;
+  font-size: 12px;
+}
+.mosaic-size-control input {
+  width: 78px;
+  accent-color: #a273ff;
+}
+.mosaic-size-control b {
+  min-width: 38px;
+  color: #d9cfff;
+  font-size: 11px;
+  font-weight: 500;
+}
+.image-editor-actions button {
+  height: 36px;
+  padding: 0 15px;
+  border: 1px solid #484057;
+  border-radius: 6px;
+  background: #242231;
+  color: #ded8e8;
+}
+.image-editor-actions .mosaic-toggle {
+  border-color: #7452a8;
+  background: #2c2140;
+  color: #d8c8f3;
+}
+.image-editor-actions .mosaic-toggle.active {
+  border-color: #a273ff;
+  background: #6a42ad;
+  color: #fff;
+  box-shadow: 0 0 16px rgba(148, 95, 255, 0.35);
+}
+.image-editor-actions .ocr-editor-button {
+  border-color: #477e82;
+  background: #183537;
+  color: #d7f9f6;
+}
+.image-editor-actions .save-edited-image {
+  border-color: #7751cc;
+  background: linear-gradient(135deg, #8f62e8, #6741b8);
+  color: #fff;
+  font-weight: 700;
+}
+.image-editor-host {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.mosaic-overlay {
+  position: absolute;
+  z-index: 5;
+  display: block;
+  pointer-events: none;
+}
+.mosaic-overlay.active {
+  cursor: crosshair;
+  pointer-events: auto;
+}
+.image-editor-host .tui-image-editor-container {
+  min-height: 100%;
+  background-color: #080812;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.image-editor-host .tui-image-editor-container button,
+.image-editor-host .tui-image-editor-container input,
+.image-editor-host .tui-image-editor-container label,
+.image-editor-host .tui-image-editor-container li {
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.image-editor-host .tui-image-editor-header {
+  display: none;
+}
+.image-editor-host .tui-image-editor-main {
+  top: 0;
+}
+.image-editor-host .tui-image-editor-menu {
+  background-color: #151321;
+}
+.image-editor-host .tui-image-editor-submenu {
+  background-color: #1b1828;
+}
+.image-editor-host .tui-image-editor-help-menu {
+  border-radius: 6px;
+  background-color: #1c1928;
+}

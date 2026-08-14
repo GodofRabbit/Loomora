@@ -1,0 +1,172 @@
+.settings-modal-layer {
+  position: fixed;
+  z-index: 280;
+  inset: var(--window-titlebar-height) 0 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(3, 4, 12, 0.62);
+  backdrop-filter: blur(5px);
+}
+.settings-modal {
+  display: grid;
+  width: min(570px, 100%);
+  overflow: hidden;
+  border: 1px solid rgba(151, 104, 235, 0.62);
+  border-radius: 8px;
+  background: #141126;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.66);
+}
+.settings-modal header {
+  display: flex;
+  min-height: 68px;
+  padding: 0 16px 0 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-modal header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-modal header b {
+  color: #f3effb;
+  font-size: 16px;
+}
+.settings-modal header span {
+  color: #9690a4;
+  font-size: 12px;
+}
+.settings-modal header button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  place-items: center;
+  background: transparent;
+  color: #aaa3b7;
+  font-size: 24px;
+}
+.settings-modal header button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.settings-modal-body {
+  display: grid;
+  padding: 22px 20px 24px;
+  gap: 18px;
+}
+.settings-modal-body label {
+  display: grid;
+  gap: 8px;
+}
+.settings-modal-body label > span {
+  color: #c7c0d5;
+  font-size: 12px;
+}
+.settings-modal-body input {
+  width: 100%;
+  height: 44px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  outline: 0;
+  background: rgba(32, 29, 53, 0.94);
+  color: #f3effb;
+  font: inherit;
+}
+.settings-modal-body input:focus {
+  border-color: rgba(157, 104, 255, 0.84);
+  box-shadow: 0 0 0 2px rgba(133, 77, 236, 0.15);
+}
+.api-key-input {
+  position: relative;
+}
+.settings-modal-body .api-key-input input {
+  padding-right: 46px;
+}
+.api-key-input button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  place-items: center;
+  background: transparent;
+  color: #9e96ad;
+}
+.api-key-input button:hover {
+  background: rgba(190, 157, 244, 0.12);
+  color: #ded2f4;
+  transform: none;
+}
+.api-key-input button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.settings-modal footer {
+  display: flex;
+  min-height: 70px;
+  padding: 0 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+.settings-modal footer button {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 7px;
+  font-weight: 700;
+}
+.settings-cancel {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #28243b;
+  color: #ddd8e8;
+}
+.settings-save {
+  border: 0;
+  background: linear-gradient(135deg, #8f62e8, #6741b8);
+  color: #fbf9ff;
+  box-shadow: 0 8px 24px #7850cf66;
+}
+.settings-save:hover {
+  background: linear-gradient(135deg, #a477f2, #7850cc);
+  box-shadow: 0 10px 30px #8c60df88;
+}
+.settings-modal-enter-active,
+.settings-modal-leave-active {
+  transition: opacity 0.16s ease;
+}
+.settings-modal-enter-active .settings-modal,
+.settings-modal-leave-active .settings-modal {
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+.settings-modal-enter-from,
+.settings-modal-leave-to {
+  opacity: 0;
+}
+.settings-modal-enter-from .settings-modal,
+.settings-modal-leave-to .settings-modal {
+  opacity: 0;
+  transform: translateY(8px);
+}
+button,
+a {
+  cursor: pointer;
+}

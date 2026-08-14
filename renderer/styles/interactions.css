@@ -1,0 +1,111 @@
+button {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.config-btn:hover {
+  background: #55308f;
+  box-shadow: 0 0 18px #8855ff66;
+}
+.generate:hover:not(:disabled) {
+  background: linear-gradient(135deg, #a477f2, #7850cc);
+  box-shadow: 0 10px 30px #8c60df88;
+}
+.topbar {
+  min-height: 70px;
+}
+.intro {
+  padding-top: 48px;
+}
+.create-card,
+.works {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.prompt-box textarea {
+  min-height: 118px;
+  scrollbar-width: thin;
+  scrollbar-color: #8063c8 transparent;
+}
+.control-row input,
+.control-row select,
+.stepper,
+.generate {
+  height: 44px;
+}
+.reference-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.reference-list .reference {
+  width: calc(25% - 6px);
+  min-width: 180px;
+  margin-top: 0;
+  padding: 6px 8px;
+  border: 1px solid #39304f;
+  border-radius: 8px;
+  background: #17172a;
+}
+.reference-list .reference span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reference-list .reference button {
+  cursor: pointer;
+}
+.app-shell {
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(5, 5, 18, 0.18) 0%,
+      rgba(5, 5, 18, 0.12) 48%,
+      rgba(5, 5, 18, 0.88) 82%,
+      #060713 100%
+    ),
+    url('../assets/loomora-background.png');
+  background-size: 100% auto;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
+.topbar {
+  background: rgba(6, 6, 20, 0.66);
+  border-bottom: 1px solid rgba(151, 110, 255, 0.12);
+}
+.intro {
+  padding-top: 54px;
+  padding-bottom: 30px;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.7);
+}
+.intro h1 {
+  font-size: 50px;
+}
+.create-card {
+  position: relative;
+  z-index: 10;
+  background: linear-gradient(
+    135deg,
+    rgba(38, 25, 72, 0.88),
+    rgba(12, 15, 33, 0.92)
+  );
+  border-color: #8154dc;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.68),
+    0 0 30px rgba(92, 41, 177, 0.2) inset;
+}
+.works {
+  position: relative;
+  z-index: 1;
+  margin-top: 46px;
+}
+.gallery.empty {
+  background: rgba(10, 10, 27, 0.72);
+  backdrop-filter: blur(12px);
+}

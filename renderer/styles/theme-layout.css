@@ -1,0 +1,267 @@
+/* Reference-led desktop composition */
+:root {
+  color-scheme: dark;
+  --surface: rgba(12, 13, 29, 0.9);
+  --surface-strong: rgba(18, 18, 38, 0.96);
+  --control: rgba(34, 34, 55, 0.94);
+  --line: rgba(148, 96, 255, 0.46);
+  --line-soft: rgba(255, 255, 255, 0.1);
+  --violet: #9a68ff;
+  --cyan: #20d8ec;
+  --text: #f6f2ff;
+  --muted: #aaa5ba;
+}
+body {
+  background: #050611;
+}
+.app-shell {
+  background-color: #050611;
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(4, 5, 17, 0.04) 0%,
+      rgba(4, 5, 17, 0.08) 45%,
+      rgba(4, 5, 17, 0.82) 76%,
+      #050611 100%
+    ),
+    url('../assets/loomora-background.png');
+  background-position: center top;
+  background-size: max(100vw, 1220px) auto;
+}
+.topbar {
+  position: sticky;
+  top: var(--window-titlebar-height);
+  z-index: 80;
+  height: 58px;
+  min-height: 58px;
+  margin-top: var(--window-titlebar-height);
+  padding: 0 max(2vw, 20px);
+  border-bottom: 1px solid rgba(155, 111, 255, 0.2);
+  background: #0b0818;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  backdrop-filter: none;
+}
+.lightbox,
+.image-editor-modal,
+.ocr-drawer-layer {
+  top: var(--window-titlebar-height);
+}
+.brand {
+  gap: 10px;
+  color: var(--text);
+  font-size: 28px;
+}
+.brand-mark {
+  display: block;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border-radius: 50%;
+  background-color: #07101f;
+  background-image: url('../assets/logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+.brand-mark::before {
+  content: none;
+}
+.topbar nav {
+  position: absolute;
+  left: 50%;
+  margin: 0;
+  transform: translateX(-50%);
+  height: 100%;
+  gap: 54px;
+}
+.topbar nav a {
+  position: relative;
+  display: grid;
+  height: 100%;
+  padding: 0 2px;
+  place-items: center;
+  color: #b7b2c3;
+  font-size: 14px;
+  text-decoration: none;
+}
+.topbar nav a.active {
+  border-bottom: 0;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(174, 140, 255, 0.8);
+}
+.topbar nav a.active::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: #a26dff;
+  box-shadow: 0 0 10px #a26dff;
+  content: '';
+}
+.config-btn {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  place-items: center;
+  background: transparent;
+  color: #f1eaff;
+  font-size: 20px;
+  line-height: 1;
+  box-shadow: none;
+}
+.config-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.config-btn:hover {
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
+}
+.app-shell main {
+  width: min(1340px, calc(100vw - 40px));
+  padding-bottom: 84px;
+}
+.intro {
+  padding: 68px 0 38px;
+}
+.eyebrow {
+  color: #d4c8f4;
+  font-size: 17px;
+  text-shadow: 0 0 18px rgba(145, 96, 255, 0.72);
+}
+.intro h1 {
+  margin: 18px 0 13px;
+  color: #faf8ff;
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 1.14;
+  text-shadow:
+    0 0 18px rgba(164, 137, 255, 0.54),
+    0 5px 26px rgba(0, 0, 0, 0.72);
+}
+.intro p {
+  color: #d2ccdc;
+  font-size: 17px;
+}
+.intro small {
+  margin-top: 8px;
+  color: #918a9f;
+  font-size: 12px;
+}
+.create-card,
+.works {
+  max-width: 1180px;
+}
+.create-card {
+  padding: 24px 28px 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(
+    125deg,
+    rgba(31, 22, 57, 0.92),
+    rgba(9, 12, 28, 0.96) 72%
+  );
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.56),
+    0 0 32px rgba(109, 58, 200, 0.16) inset;
+  backdrop-filter: blur(22px) saturate(115%);
+}
+.card-title h2 {
+  font-size: 22px;
+}
+.card-title > div span {
+  color: var(--violet);
+  text-shadow: 0 0 14px rgba(154, 104, 255, 0.8);
+}
+.status {
+  max-width: 52%;
+  min-height: 28px;
+  padding: 6px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(150, 104, 255, 0.26);
+  border-radius: 7px;
+  background: rgba(66, 39, 111, 0.36);
+  color: #bdb5ce;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt-box {
+  margin-top: 16px;
+  border: 1px solid rgba(145, 88, 255, 0.72);
+  border-radius: 8px;
+  background: rgba(27, 27, 48, 0.74);
+  box-shadow: 0 0 22px rgba(106, 55, 202, 0.1) inset;
+}
+.prompt-box:focus-within {
+  border-color: #a879ff;
+  box-shadow:
+    0 0 0 1px rgba(168, 121, 255, 0.15),
+    0 0 24px rgba(106, 55, 202, 0.16);
+}
+.prompt-box textarea {
+  height: 108px;
+  min-height: 108px;
+  padding: 17px 18px 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+.prompt-box textarea::placeholder {
+  color: #827c91;
+}
+.prompt-tools {
+  height: 34px;
+  padding: 0 15px;
+}
+.prompt-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #bdb4cd;
+}
+.reference-upload-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.prompt-tools button:hover:not(:disabled) {
+  color: #fff;
+  transform: none;
+}
+.control-row {
+  grid-template-columns:
+    minmax(184px, 1.5fr) minmax(108px, 0.8fr) minmax(132px, 1fr)
+    minmax(100px, 0.8fr) minmax(156px, 0.9fr) minmax(150px, 1.08fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+.control-row label {
+  gap: 8px;
+  color: #b9b2c5;
+  font-size: 12px;
+}
+.control-row label > span {
+  white-space: nowrap;
+}
+.stepper {
+  height: 44px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--control);
+  color: #f2eef9;
+}

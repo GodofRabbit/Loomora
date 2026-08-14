@@ -34,6 +34,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "electron/**/*",
       "renderer-dist/**/*"
     ],
     "win": {
