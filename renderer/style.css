@@ -1085,7 +1085,7 @@ details summary {
 }
 .settings-modal {
   display: grid;
-  width: min(460px, 100%);
+  width: min(570px, 100%);
   overflow: hidden;
   border: 1px solid rgba(151, 104, 235, 0.62);
   border-radius: 8px;
@@ -1157,6 +1157,40 @@ details summary {
 .settings-modal-body input:focus {
   border-color: rgba(157, 104, 255, 0.84);
   box-shadow: 0 0 0 2px rgba(133, 77, 236, 0.15);
+}
+.api-key-input {
+  position: relative;
+}
+.settings-modal-body .api-key-input input {
+  padding-right: 46px;
+}
+.api-key-input button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  place-items: center;
+  background: transparent;
+  color: #9e96ad;
+}
+.api-key-input button:hover {
+  background: rgba(190, 157, 244, 0.12);
+  color: #ded2f4;
+  transform: none;
+}
+.api-key-input button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .settings-modal footer {
   display: flex;
@@ -1307,6 +1341,8 @@ button:hover:not(:disabled) {
   font-size: 50px;
 }
 .create-card {
+  position: relative;
+  z-index: 10;
   background: linear-gradient(
     135deg,
     rgba(38, 25, 72, 0.88),
@@ -1318,6 +1354,8 @@ button:hover:not(:disabled) {
     0 0 30px rgba(92, 41, 177, 0.2) inset;
 }
 .works {
+  position: relative;
+  z-index: 1;
   margin-top: 46px;
 }
 .gallery.empty {
@@ -1344,16 +1382,6 @@ button:hover:not(:disabled) {
 }
 .sprite-spark {
   background-position: -185px -35px;
-}
-.brand-mark {
-  font-size: 0;
-  width: 34px;
-  height: 34px;
-  background-image: url('./assets/loomora-icons.png');
-  background-size: 800px auto;
-  background-position: -29px -29px;
-  background-repeat: no-repeat;
-  text-shadow: none;
 }
 .generate .sprite-icon {
   filter: brightness(0) invert(1);
@@ -1413,23 +1441,24 @@ body {
   font-size: 28px;
 }
 .brand-mark {
-  width: 32px;
-  height: 32px;
-  position: relative;
-  display: grid;
-  flex: 0 0 32px;
-  place-items: center;
-  background-image: none;
-  color: #9a7bff;
-  filter: drop-shadow(0 0 7px rgba(128, 87, 255, 0.72));
+  display: block;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  border-radius: 50%;
+  background-color: #07101f;
+  background-image: url('./assets/logo.png');
+  background-size: contain;
+  background-repeat: no-repeat;
 }
 .brand-mark::before {
-  font-family: Georgia, serif;
-  font-size: 32px;
-  line-height: 1;
-  content: '\2726';
+  content: none;
 }
 .topbar nav {
+  position: absolute;
+  left: 50%;
+  margin: 0;
+  transform: translateX(-50%);
   height: 100%;
   gap: 54px;
 }
@@ -1462,6 +1491,7 @@ body {
   display: grid;
   width: 38px;
   height: 38px;
+  margin-left: auto;
   padding: 0;
   border: 0;
   border-radius: 7px;
@@ -1583,7 +1613,20 @@ body {
   padding: 0 15px;
 }
 .prompt-tools button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: #bdb4cd;
+}
+.reference-upload-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .prompt-tools button:hover:not(:disabled) {
   color: #fff;
@@ -1592,7 +1635,7 @@ body {
 .control-row {
   grid-template-columns:
     minmax(184px, 1.5fr) minmax(108px, 0.8fr) minmax(132px, 1fr)
-    minmax(100px, 0.8fr) minmax(92px, 0.68fr) minmax(150px, 1.08fr);
+    minmax(100px, 0.8fr) minmax(156px, 0.9fr) minmax(150px, 1.08fr);
   gap: 12px;
   margin-top: 18px;
 }
@@ -1600,6 +1643,9 @@ body {
   gap: 8px;
   color: #b9b2c5;
   font-size: 12px;
+}
+.control-row label > span {
+  white-space: nowrap;
 }
 .control-row input,
 .control-row select,
@@ -1616,6 +1662,133 @@ body {
 .settings input:focus {
   border-color: rgba(157, 104, 255, 0.78);
   box-shadow: 0 0 0 2px rgba(133, 77, 236, 0.12);
+}
+.dropdown-select {
+  position: relative;
+  min-width: 0;
+  height: 44px;
+}
+.dropdown-select.open {
+  z-index: 220;
+}
+.dropdown-select-trigger {
+  display: flex;
+  width: 100%;
+  height: 44px;
+  padding: 0 11px 0 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--control);
+  color: #f2eef9;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+}
+.dropdown-select-trigger > span {
+  white-space: nowrap;
+}
+.dropdown-select-trigger:hover,
+.dropdown-select-trigger:focus,
+.dropdown-select.open .dropdown-select-trigger {
+  border-color: rgba(157, 104, 255, 0.78);
+  background: var(--control);
+  box-shadow: 0 0 0 2px rgba(133, 77, 236, 0.12);
+  transform: none;
+}
+.dropdown-select-trigger svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: #a99fba;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.16s ease;
+}
+.dropdown-select.open .dropdown-select-trigger svg {
+  transform: rotate(180deg);
+}
+.dropdown-select-panel {
+  position: absolute;
+  z-index: 220;
+  top: calc(100% + 7px);
+  left: 0;
+  display: grid;
+  width: max(100%, 132px);
+  max-height: 252px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid rgba(154, 112, 226, 0.32);
+  border-radius: 7px;
+  background: rgba(24, 21, 40, 0.98);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(16px);
+  scrollbar-color: rgba(157, 104, 255, 0.55) transparent;
+  scrollbar-width: thin;
+  transform-origin: top center;
+  will-change: opacity, transform;
+}
+.dropdown-panel-enter-active {
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.dropdown-panel-leave-active {
+  transition:
+    opacity 0.12s ease-in,
+    transform 0.12s ease-in;
+}
+.dropdown-panel-enter-from,
+.dropdown-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+}
+.dropdown-select-panel button {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: transparent;
+  color: #dcd6e8;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: left;
+}
+.dropdown-select-panel button:hover,
+.dropdown-select-panel button:focus {
+  outline: 0;
+  background: rgba(190, 157, 244, 0.16);
+  color: #fff;
+  transform: none;
+}
+.dropdown-select-panel button.selected {
+  background: rgba(166, 119, 239, 0.12);
+  color: #d9c5ff;
+}
+.dropdown-select-panel button.selected:hover,
+.dropdown-select-panel button.selected:focus {
+  background: rgba(190, 157, 244, 0.2);
+}
+.dropdown-select-panel button svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: #b78aff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .stepper button {
   width: 34px;
@@ -1729,16 +1902,21 @@ details summary {
 .gallery-card-meta {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
-.library-gallery {
-  display: block;
-  columns: 4;
-  column-gap: 16px;
+.gallery.library-gallery {
+  display: grid;
+  grid-template-columns: repeat(var(--library-column-count), minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.library-gallery-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
 }
 .library-gallery .gallery-card {
   width: 100%;
-  margin: 0 0 16px;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  margin: 0;
 }
 .library-gallery .gallery-card img {
   width: 100%;
@@ -1748,7 +1926,6 @@ details summary {
 }
 .library-gallery.empty {
   display: flex;
-  columns: auto;
 }
 .library-gallery.loading {
   min-height: 320px;
@@ -1807,11 +1984,10 @@ details summary {
     width: calc(100vw - 32px);
   }
   .control-row {
-    grid-template-columns: 1.45fr 0.8fr 1fr 0.8fr 0.68fr 1fr;
+    grid-template-columns:
+      minmax(184px, 1.45fr) minmax(108px, 0.8fr) minmax(132px, 1fr)
+      minmax(100px, 0.8fr) minmax(156px, 0.9fr) minmax(150px, 1fr);
     gap: 9px;
-  }
-  .library-gallery {
-    columns: 3;
   }
 }
 
@@ -1824,9 +2000,6 @@ details summary {
   }
   .gallery {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .library-gallery {
-    columns: 3;
   }
 }
 
@@ -1849,9 +2022,6 @@ details summary {
   .control-row,
   .gallery {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .library-gallery {
-    columns: 2;
   }
   .status {
     max-width: 45%;

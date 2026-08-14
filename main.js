@@ -45,7 +45,19 @@ const MODEL_ALIASES = {
   'nano-banana-pro': 'gemini-3-pro-image-preview',
   'grok-imagine-image-quality': 'grok-imagine-image-pro',
 };
+const MODEL_GENERATION_LIMITS = {
+  'gpt-image-2': 14,
+  'gemini-3-pro-image-preview': 4,
+  'gemini-3.1-flash-image-preview': 4,
+  'grok-imagine-image': 1,
+  'grok-imagine-image-pro': 1,
+  'grok-imagine-image-lite': 1,
+  'grok-imagine-image-edit': 3,
+};
 const normalizeModel = (model) => MODEL_ALIASES[model] || model;
+function generationLimit(model) {
+  return MODEL_GENERATION_LIMITS[model] || 1;
+}
 function referenceLimit(model) {
   if (model === 'gpt-image-2') return 14;
   if (model.startsWith('gemini-')) return 4;
@@ -107,7 +119,7 @@ function isGalleryImage(filePath) {
 }
 async function download(url, key) {
   const r = await fetch(url, { headers: headers(key) });
-  if (!r.ok) throw new Error(`下载图片失败 (${r.status})`);
+  if (!r.ok) throw new Error(`下载图片失败（${r.status}）`);
   return {
     buffer: Buffer.from(await r.arrayBuffer()),
     mime: r.headers.get('content-type')?.split(';')[0],
@@ -235,12 +247,17 @@ ipcMain.handle('list-gallery', async () => {
       }
     }
   }
-  return files.sort((a, b) => b.createdAt - a.createdAt);
+  return files.sort(
+    (a, b) =>
+      String(b.date).localeCompare(String(a.date)) ||
+      b.createdAt - a.createdAt ||
+      b.name.localeCompare(a.name),
+  );
 });
 
 ipcMain.handle('copy-image', async (_event, src) => {
   const image = nativeImage.createFromDataURL(src);
-  if (image.isEmpty()) throw new Error('Unable to copy image');
+  if (image.isEmpty()) throw new Error('无法复制图片');
   clipboard.writeImage(image);
   return true;
 });
@@ -278,9 +295,9 @@ ipcMain.handle('download-image', async (_event, payload) => {
       !dataUrl.startsWith('data:image/') ||
       dataUrl.length > 140 * 1024 * 1024
     )
-      throw new Error('Invalid image data');
+      throw new Error('图片数据无效');
     const image = nativeImage.createFromDataURL(dataUrl);
-    if (image.isEmpty()) throw new Error('Invalid image data');
+    if (image.isEmpty()) throw new Error('图片数据无效');
     const mime = dataUrl.match(/^data:image\/(png|jpeg|webp)/i)?.[1];
     if (mime === 'jpeg') {
       buffer = image.toJPEG(95);
@@ -316,34 +333,47 @@ ipcMain.handle('download-image', async (_event, payload) => {
 ipcMain.handle('save-edited-image', async (_event, payload) => {
   const sourcePath = path.resolve(payload?.sourcePath || '');
   if (!isGalleryImage(sourcePath) || !fs.existsSync(sourcePath))
-    throw new Error('Invalid gallery image path');
+    throw new Error('作品图片路径无效');
   const dataUrl = String(payload?.dataUrl || '');
   if (!dataUrl.startsWith('data:image/') || dataUrl.length > 140 * 1024 * 1024)
-    throw new Error('Invalid edited image data');
+    throw new Error('编辑后的图片数据无效');
   const editedImage = nativeImage.createFromDataURL(dataUrl);
-  if (editedImage.isEmpty()) throw new Error('Invalid edited image data');
+  if (editedImage.isEmpty()) throw new Error('编辑后的图片数据无效');
   const buffer = editedImage.toPNG();
   if (!buffer.length || buffer.length > 100 * 1024 * 1024)
-    throw new Error('Edited image is empty or too large');
+    throw new Error('编辑后的图片为空或过大');
   const stem = path.basename(sourcePath, path.extname(sourcePath));
-  const file = path.join(
-    path.dirname(sourcePath),
-    `${stem}-edited-${Date.now()}.png`,
-  );
-  fs.writeFileSync(file, buffer, { flag: 'wx' });
-  const stat = fs.statSync(file);
-  return {
-    name: path.basename(file),
-    date: path.basename(path.dirname(file)),
-    path: file,
-    data: `data:image/png;base64,${buffer.toString('base64')}`,
-    createdAt: stat.mtimeMs,
-  };
+  const defaultName = `${stem}-edited-${Date.now()}.png`;
+  const result = await dialog.showSaveDialog({
+    title: '另存为新图',
+    defaultPath: path.join(galleryDir(), defaultName),
+    filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+  });
+  if (result.canceled || !result.filePath) return { saved: false };
+  const targetPath = path.extname(result.filePath)
+    ? result.filePath
+    : `${result.filePath}.png`;
+  fs.writeFileSync(targetPath, buffer);
+
+  const parentRoot = path.resolve(path.dirname(path.dirname(targetPath)));
+  const isInGalleryDateDirectory = galleryRoots().includes(parentRoot);
+  let item = null;
+  if (isInGalleryDateDirectory) {
+    const stat = fs.statSync(targetPath);
+    item = {
+      name: path.basename(targetPath),
+      date: path.basename(path.dirname(targetPath)),
+      path: targetPath,
+      data: `data:image/png;base64,${buffer.toString('base64')}`,
+      createdAt: stat.mtimeMs,
+    };
+  }
+  return { saved: true, path: targetPath, item };
 });
 
 ipcMain.handle('delete-image', async (_event, filePath) => {
   const target = path.resolve(filePath || '');
-  if (!isGalleryImage(target)) throw new Error('Invalid gallery image path');
+  if (!isGalleryImage(target)) throw new Error('作品图片路径无效');
   if (!fs.existsSync(target)) return { deleted: false };
   const confirmation = await dialog.showMessageBox({
     type: 'warning',
@@ -361,7 +391,7 @@ ipcMain.handle('delete-image', async (_event, filePath) => {
 
 ipcMain.handle('show-image-in-folder', async (_event, filePath) => {
   const target = path.resolve(filePath || '');
-  if (!fs.existsSync(target)) throw new Error('Image file not found');
+  if (!fs.existsSync(target)) throw new Error('图片文件不存在');
   shell.showItemInFolder(target);
   return true;
 });
@@ -390,9 +420,7 @@ async function generateOne(p, batchIndex, event) {
     const references = Array.isArray(p.reference) ? p.reference : [];
     const maxReferences = referenceLimit(model);
     if (references.length > maxReferences)
-      throw new Error(
-        `${model} supports at most ${maxReferences} reference image${maxReferences === 1 ? '' : 's'}`,
-      );
+      throw new Error(`${model} 最多支持 ${maxReferences} 张参考图`);
     const size = isGptImage
       ? GPT_IMAGE_SIZE_VALUES.has(p.size)
         ? p.size
@@ -432,13 +460,13 @@ async function generateOne(p, batchIndex, event) {
       requestUrl,
       JSON.stringify(body),
     );
-    report(`Sending request ${batchIndex + 1}...`);
+    report(`正在发送第 ${batchIndex + 1} 张图片...`);
     const response = fetch(requestUrl, {
       method: 'POST',
       headers: headers(p.apiKey, true),
       body: JSON.stringify(body),
     });
-    report(`Request ${batchIndex + 1} sent`);
+    report(`第 ${batchIndex + 1} 张图片请求已发送`);
     const res = await response,
       text = await res.text();
     console.log('[Loomora] image response', res.status, res.statusText);
@@ -463,7 +491,7 @@ async function generateOne(p, batchIndex, event) {
       };
     }
     let last = {};
-    report(`Request ${batchIndex + 1} accepted; generating image...`);
+    report(`第 ${batchIndex + 1} 张图片已进入队列，正在生成...`);
     for (let i = 0; i < 200; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       const q = await fetch(`${base}/v1/images/tasks/${taskId}`, {
@@ -474,14 +502,14 @@ async function generateOne(p, batchIndex, event) {
       try {
         last = JSON.parse(queryText);
       } catch {
-        if (!q.ok) throw new Error(`Task query failed (${q.status})`);
+        if (!q.ok) throw new Error(`查询生成任务失败（${q.status}）`);
         continue;
       }
       if (!q.ok)
         throw new Error(
           last?.error?.message ||
             last?.message ||
-            `Task query failed (${q.status})`,
+            `查询生成任务失败（${q.status}）`,
         );
       const state = statusOf(last);
       if (['succeeded', 'completed', 'success'].includes(state))
@@ -506,7 +534,11 @@ async function generateOne(p, batchIndex, event) {
 }
 
 ipcMain.handle('generate', async (event, p) => {
-  const total = Math.min(4, Math.max(1, Number(p.count) || 1));
+  const model = normalizeModel(p?.model?.trim() || 'gpt-image-2');
+  const total = Math.min(
+    generationLimit(model),
+    Math.max(1, Number(p.count) || 1),
+  );
   console.log(`[Loomora] starting ${total} generation request(s)`);
   const results = [];
   for (let index = 0; index < total; index++) {

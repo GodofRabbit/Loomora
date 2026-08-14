@@ -1,5 +1,13 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import {
+  ref,
+  computed,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+} from 'vue';
+import DropdownSelect from './components/DropdownSelect.vue';
 import 'tui-image-editor/dist/tui-image-editor.css';
 import 'tui-color-picker/dist/tui-color-picker.css';
 const DEFAULT_ENDPOINT = 'https://www.zexitongxue.com';
@@ -13,6 +21,7 @@ const prompt = ref(''),
   imagePaths = ref([]),
   gallery = ref([]),
   galleryLoading = ref(false),
+  galleryColumnCount = ref(4),
   preview = ref(null),
   editorHost = ref(null),
   editorSource = ref(null),
@@ -38,20 +47,63 @@ const prompt = ref(''),
   busy = ref(false),
   endpoint = ref(localStorage.getItem(ENDPOINT_STORAGE) || DEFAULT_ENDPOINT),
   model = ref('gpt-image-2'),
-  resolution = ref('2048x1152'),
+  resolution = ref('auto'),
   quality = ref('auto'),
   apiKey = ref(localStorage.getItem(API_KEY_STORAGE) || '');
 const settingsEndpoint = ref(endpoint.value);
 const settingsApiKey = ref(apiKey.value);
-const ratios = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2'];
+const apiKeyVisible = ref(false);
+const modelOptions = [
+  { value: 'gpt-image-2', label: 'GPT Image 2', maxCount: 14 },
+  {
+    value: 'gemini-3-pro-image-preview',
+    label: 'Nano Banana Pro',
+    maxCount: 4,
+  },
+  {
+    value: 'gemini-3.1-flash-image-preview',
+    label: 'Nano Banana 2',
+    maxCount: 4,
+  },
+  { value: 'grok-imagine-image', label: 'Grok Imagine Image', maxCount: 1 },
+  {
+    value: 'grok-imagine-image-pro',
+    label: 'Grok Imagine Image Pro',
+    maxCount: 1,
+  },
+  {
+    value: 'grok-imagine-image-lite',
+    label: 'Grok Imagine Image Lite',
+    maxCount: 1,
+  },
+  {
+    value: 'grok-imagine-image-edit',
+    label: 'Grok Imagine Image Edit',
+    maxCount: 3,
+  },
+];
+const gptRatios = ['1:1', '16:9', '9:16', '3:2', '2:3'];
+const geminiRatios = [
+  '1:1',
+  '16:9',
+  '9:16',
+  '4:3',
+  '3:4',
+  '3:2',
+  '2:3',
+  '5:4',
+  '4:5',
+  '21:9',
+];
+const grokRatios = ['1:1', '16:9', '9:16'];
 const gptSizes = [
-  '1024x1024',
-  '1536x1024',
-  '1024x1536',
-  '2048x1152',
-  '3840x2160',
-  '2160x3840',
-  'auto',
+  { value: 'auto', label: '自动' },
+  { value: '1024x1024', label: '1:1' },
+  { value: '1536x1024', label: '3:2' },
+  { value: '1024x1536', label: '2:3' },
+  { value: '2048x1152', label: '16:9（2K）' },
+  { value: '3840x2160', label: '16:9（4K）' },
+  { value: '2160x3840', label: '9:16（4K）' },
 ];
 const modelAliases = {
   'dall-e': 'gpt-image-2',
@@ -71,6 +123,33 @@ const modelIsGpt = computed(() => normalizedModel.value === 'gpt-image-2');
 const modelIsGemini = computed(() =>
   normalizedModel.value.startsWith('gemini-'),
 );
+const activeRatios = computed(() => {
+  if (modelIsGpt.value) return gptRatios;
+  if (modelIsGemini.value) return geminiRatios;
+  return grokRatios;
+});
+const ratioOptions = computed(() =>
+  activeRatios.value.map((value) => ({ value, label: value })),
+);
+const resolutionOptions = computed(() =>
+  modelIsGpt.value ? gptSizes : ratioOptions.value,
+);
+const qualityOptions = computed(() => {
+  if (modelIsGpt.value)
+    return [
+      { value: 'auto', label: '自动' },
+      { value: 'low', label: '低' },
+      { value: 'medium', label: '中' },
+      { value: 'high', label: '高' },
+    ];
+  if (modelIsGemini.value)
+    return [
+      { value: '1K', label: '1K' },
+      { value: '2K', label: '2K' },
+      { value: '4K', label: '4K' },
+    ];
+  return [];
+});
 const maxReferences = computed(() => {
   if (modelIsGpt.value) return 14;
   if (modelIsGemini.value) return 4;
@@ -79,7 +158,55 @@ const maxReferences = computed(() => {
   if (normalizedModel.value.startsWith('grok-imagine-image')) return 1;
   return 14;
 });
+const maxCount = computed(
+  () =>
+    modelOptions.find((option) => option.value === normalizedModel.value)
+      ?.maxCount || 1,
+);
+watch(model, () => {
+  if (modelIsGpt.value) {
+    ratio.value = '16:9';
+    resolution.value = 'auto';
+    quality.value = 'auto';
+  } else if (modelIsGemini.value) {
+    ratio.value = '1:1';
+    resolution.value = '1:1';
+    quality.value = '2K';
+  } else {
+    ratio.value = '1:1';
+    resolution.value = '1:1';
+    quality.value = 'auto';
+  }
+  count.value = Math.min(count.value, maxCount.value);
+  if (reference.value.length > maxReferences.value) {
+    status.value = `${normalizedModel.value} 最多支持 ${maxReferences.value} 张参考图`;
+  }
+});
+watch(ratio, (value) => {
+  if (!modelIsGpt.value) resolution.value = value;
+});
 const counter = computed(() => `${prompt.value.length}/800`);
+function sortGalleryItems(items = []) {
+  return [...items].sort((a, b) => {
+    const dateDifference = String(b.date || '').localeCompare(
+      String(a.date || ''),
+    );
+    const timeDifference =
+      (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0);
+    return (
+      dateDifference ||
+      timeDifference ||
+      String(b.name).localeCompare(String(a.name))
+    );
+  });
+}
+const galleryColumns = computed(() => {
+  const columns = Array.from({ length: galleryColumnCount.value }, () => []);
+  gallery.value.forEach((item, index) => {
+    columns[index % columns.length].push(item);
+  });
+  return columns;
+});
 let scrollResizeObserver;
 let stopGenerationStatus;
 let imageEditor;
@@ -112,6 +239,10 @@ function updateScrollbar() {
     el.scrollHeight > el.clientHeight
       ? 12 + maxTop * (el.scrollTop / (el.scrollHeight - el.clientHeight))
       : 12;
+}
+function updateGalleryColumnCount() {
+  galleryColumnCount.value =
+    window.innerWidth <= 850 ? 2 : window.innerWidth <= 1180 ? 3 : 4;
 }
 function startScrollDrag(event) {
   const el = scrollContainer.value;
@@ -158,9 +289,9 @@ async function deleteContextImage() {
     }
     gallery.value = gallery.value.filter((item) => item.path !== filePath);
     closePreview();
-    status.value = 'Image deleted';
+    status.value = '图片已删除';
   } catch (error) {
-    status.value = error?.message || 'Delete failed';
+    status.value = error?.message || '删除图片失败';
   }
 }
 async function showContextImageInFolder() {
@@ -170,16 +301,16 @@ async function showContextImageInFolder() {
   try {
     await window.forge.showImageInFolder(filePath);
   } catch (error) {
-    status.value = error?.message || 'Unable to open file location';
+    status.value = error?.message || '无法打开文件所在位置';
   }
 }
 async function copyContextImage() {
   if (!contextMenu.value) return;
   try {
     await window.forge.copyImage(contextMenu.value.src);
-    status.value = 'Image copied';
+    status.value = '图片已复制';
   } catch (error) {
-    status.value = error?.message || 'Copy failed';
+    status.value = error?.message || '复制图片失败';
   } finally {
     contextMenu.value = null;
   }
@@ -680,12 +811,19 @@ async function saveEditedImage() {
   editorSaving.value = true;
   editorStatus.value = '正在保存新图片...';
   try {
-    const item = await window.forge.saveEditedImage({
+    const result = await window.forge.saveEditedImage({
       sourcePath: editorSource.value.filePath,
       dataUrl: imageEditor.toDataURL({ format: 'png' }),
     });
-    gallery.value = [item, ...gallery.value];
-    status.value = `已另存为 ${item.name}`;
+    if (!result.saved) {
+      editorStatus.value = '';
+      return;
+    }
+    if (result.item) {
+      gallery.value = sortGalleryItems([result.item, ...gallery.value]);
+    }
+    status.value = `图片已保存到 ${result.path}`;
+    showToast(`保存完成：${result.path}`);
     closeImageEditor(true);
   } catch (error) {
     editorStatus.value = error?.message || '保存编辑图片失败';
@@ -716,10 +854,47 @@ function onKeydown(event) {
   if (preview.value && event.key === 'ArrowLeft') movePreview(-1);
   if (preview.value && event.key === 'ArrowRight') movePreview(1);
 }
+function readPastedImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('无法读取剪贴板图片'));
+    reader.readAsDataURL(file);
+  });
+}
+async function onPaste(event) {
+  if (view.value !== 'create' || editorOpen.value || settingsOpen.value) return;
+  const imageItem = Array.from(event.clipboardData?.items || []).find(
+    (item) => item.kind === 'file' && item.type.startsWith('image/'),
+  );
+  if (!imageItem) return;
+  event.preventDefault();
+  if (reference.value.length >= maxReferences.value) {
+    status.value = `${normalizedModel.value} 最多添加 ${maxReferences.value} 张参考图`;
+    return;
+  }
+  const file = imageItem.getAsFile();
+  if (!file) return;
+  try {
+    const data = await readPastedImage(file);
+    reference.value.push({
+      name: file.name || `粘贴参考图-${Date.now()}.png`,
+      data,
+    });
+    status.value = '已粘贴参考图';
+    showToast('参考图已添加');
+  } catch (error) {
+    status.value = error?.message || '粘贴参考图失败';
+    showToast(status.value, 'error');
+  }
+}
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
+  window.addEventListener('paste', onPaste);
   window.addEventListener('resize', updateScrollbar);
   window.addEventListener('resize', updateMosaicOverlay);
+  window.addEventListener('resize', updateGalleryColumnCount);
+  updateGalleryColumnCount();
   scrollResizeObserver = new ResizeObserver(updateScrollbar);
   scrollResizeObserver.observe(scrollContainer.value);
   scrollResizeObserver.observe(scrollContainer.value.querySelector('main'));
@@ -730,8 +905,10 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('paste', onPaste);
   window.removeEventListener('resize', updateScrollbar);
   window.removeEventListener('resize', updateMosaicOverlay);
+  window.removeEventListener('resize', updateGalleryColumnCount);
   scrollResizeObserver?.disconnect();
   stopGenerationStatus?.();
   imageEditor?.destroy();
@@ -743,7 +920,7 @@ async function openGallery() {
   galleryLoading.value = true;
   await nextTick();
   try {
-    gallery.value = await window.forge.listGallery();
+    gallery.value = sortGalleryItems(await window.forge.listGallery());
   } catch (error) {
     gallery.value = [];
     status.value = error?.message || '作品库加载失败';
@@ -767,6 +944,7 @@ function removeRef(i) {
 function openSettings() {
   settingsEndpoint.value = endpoint.value;
   settingsApiKey.value = apiKey.value;
+  apiKeyVisible.value = false;
   settingsOpen.value = true;
 }
 function closeSettings() {
@@ -783,11 +961,11 @@ function save() {
 }
 async function generate() {
   if (!prompt.value.trim()) {
-    status.value = 'Please enter a prompt';
+    status.value = '请输入提示词';
     return;
   }
   if (!apiKey.value.trim()) {
-    status.value = 'Please enter an API Key';
+    status.value = '请先填写 API Key';
     return;
   }
   if (reference.value.length > maxReferences.value) {
@@ -795,12 +973,12 @@ async function generate() {
     return;
   }
   if (!window.forge?.generate) {
-    status.value = 'Request bridge unavailable. Please restart Loomora.';
+    status.value = '应用通信服务不可用，请重启 Loomora';
     return;
   }
   busy.value = true;
-  const total = Math.min(4, Math.max(1, Number(count.value) || 1));
-  status.value = `Generating ${total} image${total > 1 ? 's' : ''}`;
+  const total = Math.min(maxCount.value, Math.max(1, Number(count.value) || 1));
+  status.value = `正在生成 ${total} 张图片...`;
   const request = {
     endpoint: endpoint.value,
     apiKey: apiKey.value,
@@ -817,13 +995,13 @@ async function generate() {
     images.value = result.images || [];
     imagePaths.value = result.localPaths || [];
     if (!result.ok || result.failedCount) {
-      status.value = result.error || 'Generation failed';
+      status.value = result.error || '图片生成失败';
       return;
     }
     const folder = result.folder;
-    status.value = folder ? `Saved to ${folder}` : 'Generation complete';
+    status.value = folder ? `生成完成，作品已保存到 ${folder}` : '图片生成完成';
   } catch (error) {
-    status.value = error?.message || 'Unable to send generation request';
+    status.value = error?.message || '图片生成请求发送失败';
   } finally {
     busy.value = false;
   }
@@ -840,7 +1018,9 @@ async function generate() {
     <div class="aurora a1"></div>
     <div class="aurora a2"></div>
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">✦</span><b>Loomora</b></div>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span><b>Loomora</b>
+      </div>
       <nav>
         <a :class="{ active: view === 'create' }" @click="view = 'create'"
           >AI 创作</a
@@ -885,7 +1065,17 @@ async function generate() {
           ></textarea>
           <div class="prompt-tools">
             <button :disabled="maxReferences === 0" @click="pick">
-              ▧ 添加参考图（{{ reference.length }}/{{ maxReferences }}）</button
+              <svg
+                class="reference-upload-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="3.5" y="4" width="14" height="16" rx="2" />
+                <circle cx="8" cy="9" r="1.5" />
+                <path d="m5.5 17 3.5-3.5 2.5 2.5 2-2 2.5 2.5" />
+                <path d="M19 8v7M15.5 11.5h7" />
+              </svg>
+              添加参考图（{{ reference.length }}/{{ maxReferences }}）</button
             ><span>{{ counter }}</span>
           </div>
         </div>
@@ -905,45 +1095,38 @@ async function generate() {
           </div>
         </div>
         <div class="control-row">
-          <label><span>模型选择</span><input v-model="model" /></label
+          <label
+            ><span>模型选择</span>
+            <DropdownSelect
+              v-model="model"
+              :options="modelOptions"
+              aria-label="选择图片生成模型" /></label
           ><label
-            ><span>画面比例</span
-            ><select v-model="ratio">
-              <option v-for="r in ratios" :key="r">{{ r }}</option>
-            </select></label
+            ><span>画面比例</span>
+            <DropdownSelect
+              v-model="ratio"
+              :options="ratioOptions"
+              aria-label="选择画面比例" /></label
           ><label
-            ><span>Resolution</span
-            ><select v-model="resolution">
-              <template v-if="modelIsGpt"
-                ><option v-for="s in gptSizes" :key="s">
-                  {{ s }}
-                </option></template
-              >
-              <template v-else
-                ><option v-for="r in ratios" :key="r">{{ r }}</option></template
-              >
-            </select></label
+            ><span>分辨率</span>
+            <DropdownSelect
+              v-model="resolution"
+              :options="resolutionOptions"
+              aria-label="选择分辨率" /></label
           ><label v-if="modelIsGpt || modelIsGemini"
-            ><span>Quality</span
-            ><select v-model="quality">
-              <template v-if="modelIsGpt"
-                ><option>auto</option>
-                <option>low</option>
-                <option>medium</option>
-                <option>high</option></template
-              >
-              <template v-else
-                ><option>1K</option>
-                <option>2K</option>
-                <option>4K</option></template
-              >
-            </select></label
+            ><span>质量</span>
+            <DropdownSelect
+              v-model="quality"
+              :options="qualityOptions"
+              aria-label="选择图片质量" /></label
           ><label
-            ><span>批量抽卡</span>
+            ><span>批量抽卡（最多 {{ maxCount }} 张）</span>
             <div class="stepper">
               <button @click="count = Math.max(1, count - 1)">−</button
               ><b>{{ count }}</b
-              ><button @click="count = Math.min(4, count + 1)">＋</button>
+              ><button @click="count = Math.min(maxCount, count + 1)">
+                ＋
+              </button>
             </div></label
           ><button class="generate" :disabled="busy" @click="generate">
             ✦ {{ busy ? '生成中…' : '生成' }}
@@ -997,27 +1180,36 @@ async function generate() {
         <div
           v-else
           class="gallery library-gallery"
+          :style="{ '--library-column-count': galleryColumnCount }"
           :class="{
             empty: galleryLoading || !gallery.length,
             loading: galleryLoading,
           }"
         >
-          <article
-            v-for="item in galleryLoading ? [] : gallery"
-            :key="item.path"
-            class="gallery-card"
+          <div
+            v-for="(column, columnIndex) in galleryLoading || !gallery.length
+              ? []
+              : galleryColumns"
+            :key="columnIndex"
+            class="library-gallery-column"
           >
-            <img
-              :src="item.data"
-              :alt="item.name"
-              @click="openPreview(item, gallery.indexOf(item))"
-              @contextmenu="showImageMenu($event, item.data, item.path, true)"
-            />
-            <div class="gallery-card-meta">
-              <b>{{ item.name }}</b
-              ><small>{{ item.date }}</small>
-            </div>
-          </article>
+            <article
+              v-for="item in column"
+              :key="item.path"
+              class="gallery-card"
+            >
+              <img
+                :src="item.data"
+                :alt="item.name"
+                @click="openPreview(item, gallery.indexOf(item))"
+                @contextmenu="showImageMenu($event, item.data, item.path, true)"
+              />
+              <div class="gallery-card-meta">
+                <b>{{ item.name }}</b
+                ><small>{{ item.date }}</small>
+              </div>
+            </article>
+          </div>
           <div v-if="galleryLoading" class="gallery-loading" role="status">
             <span class="gallery-loading-spinner"></span>
             <b>正在加载作品库</b>
@@ -1266,11 +1458,40 @@ async function generate() {
             </label>
             <label>
               <span>API Key</span>
-              <input
-                v-model="settingsApiKey"
-                type="password"
-                placeholder="请输入 API Key"
-              />
+              <div class="api-key-input">
+                <input
+                  v-model="settingsApiKey"
+                  :type="apiKeyVisible ? 'text' : 'password'"
+                  placeholder="请输入 API Key"
+                />
+                <button
+                  type="button"
+                  :title="apiKeyVisible ? '隐藏 API Key' : '显示 API Key'"
+                  :aria-label="apiKeyVisible ? '隐藏 API Key' : '显示 API Key'"
+                  @click="apiKeyVisible = !apiKeyVisible"
+                >
+                  <svg
+                    v-if="apiKeyVisible"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 3l18 18" />
+                    <path d="M10.6 10.7a2 2 0 0 0 2.7 2.7" />
+                    <path
+                      d="M9.9 4.2A10.7 10.7 0 0 1 12 4c5.2 0 9 5.3 9 8a9.6 9.6 0 0 1-2 3.5"
+                    />
+                    <path
+                      d="M6.6 6.6C4.3 8.1 3 10.4 3 12c0 2.7 3.8 8 9 8 1.3 0 2.5-.3 3.6-.8"
+                    />
+                  </svg>
+                  <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M3 12c0-2.7 3.8-8 9-8s9 5.3 9 8-3.8 8-9 8-9-5.3-9-8Z"
+                    />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              </div>
             </label>
           </div>
           <footer>
