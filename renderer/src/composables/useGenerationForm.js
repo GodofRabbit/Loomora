@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue';
 import {
   API_KEY_STORAGE,
+  DEFAULT_PROMPT_LIMIT,
   DEFAULT_ENDPOINT,
   ENDPOINT_STORAGE,
   geminiRatios,
@@ -9,6 +10,7 @@ import {
   grokRatios,
   modelAliases,
   modelOptions,
+  promptLimits,
 } from '../config/imageModels';
 
 const qualityByProvider = {
@@ -89,7 +91,10 @@ export function useGenerationForm({ status, showToast }) {
       modelOptions.find((option) => option.value === normalizedModel.value)
         ?.maxCount || 1,
   );
-  const counter = computed(() => `${prompt.value.length}/800`);
+  const promptLimit = computed(
+    () => promptLimits[model.value.trim()] || DEFAULT_PROMPT_LIMIT,
+  );
+  const counter = computed(() => `${prompt.value.length}/${promptLimit.value}`);
 
   watch(model, () => {
     if (modelIsGpt.value) {
@@ -207,6 +212,7 @@ export function useGenerationForm({ status, showToast }) {
       imagePaths.value = result.localPaths || [];
       if (!result.ok || result.failedCount) {
         status.value = result.error || '图片生成失败';
+        showToast(status.value, 'error');
         return;
       }
       status.value = result.folder
@@ -214,6 +220,7 @@ export function useGenerationForm({ status, showToast }) {
         : '图片生成完成';
     } catch (error) {
       status.value = error?.message || '图片生成请求发送失败';
+      showToast(status.value, 'error');
     } finally {
       busy.value = false;
     }
@@ -239,6 +246,7 @@ export function useGenerationForm({ status, showToast }) {
     qualityOptions,
     maxReferences,
     maxCount,
+    promptLimit,
     counter,
     modelOptions,
     pickReference,

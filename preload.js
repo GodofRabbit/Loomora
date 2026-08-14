@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('forge', {
   pickImage: () => ipcRenderer.invoke('pick-image'),
   generate: (p) => ipcRenderer.invoke('generate', p),
@@ -8,6 +8,14 @@ contextBridge.exposeInMainWorld('forge', {
     return () => ipcRenderer.removeListener('generation-status', listener);
   },
   listGallery: () => ipcRenderer.invoke('list-gallery'),
+  importGalleryImages: (files) => {
+    const filePaths = files
+      ? Array.from(files, (file) => webUtils.getPathForFile(file)).filter(
+          Boolean,
+        )
+      : null;
+    return ipcRenderer.invoke('import-gallery-images', filePaths);
+  },
   saveEditedImage: (payload) =>
     ipcRenderer.invoke('save-edited-image', payload),
   downloadImage: (payload) => ipcRenderer.invoke('download-image', payload),

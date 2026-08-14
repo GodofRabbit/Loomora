@@ -24,7 +24,7 @@ watch(
 
 <template>
   <Transition name="settings-modal">
-    <div v-if="open" class="settings-modal-layer" @click.self="$emit('close')">
+    <div v-if="open" class="settings-modal-layer">
       <section
         class="settings-modal"
         role="dialog"

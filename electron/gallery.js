@@ -96,6 +96,49 @@ function listGallery() {
   );
 }
 
+function availableImportPath(directory, fileName) {
+  const parsed = path.parse(path.basename(fileName));
+  let candidate = path.join(directory, `${parsed.name}${parsed.ext}`);
+  for (let suffix = 1; fs.existsSync(candidate); suffix++) {
+    candidate = path.join(directory, `${parsed.name}-${suffix}${parsed.ext}`);
+  }
+  return candidate;
+}
+
+function importGalleryFiles(filePaths) {
+  const directory = galleryDir();
+  const items = [];
+  const failed = [];
+  for (const inputPath of filePaths) {
+    const sourcePath = path.resolve(String(inputPath || ''));
+    try {
+      if (
+        !IMAGE_PATTERN.test(sourcePath) ||
+        !fs.statSync(sourcePath).isFile()
+      ) {
+        throw new Error('仅支持 JPG、PNG 和 WEBP 图片');
+      }
+      if (nativeImage.createFromPath(sourcePath).isEmpty()) {
+        throw new Error('图片文件无效或已损坏');
+      }
+      const targetPath = availableImportPath(
+        directory,
+        path.basename(sourcePath),
+      );
+      fs.copyFileSync(sourcePath, targetPath);
+      const importedAt = new Date();
+      fs.utimesSync(targetPath, importedAt, importedAt);
+      items.push(galleryItem(targetPath));
+    } catch (error) {
+      failed.push({
+        name: path.basename(sourcePath) || '未知文件',
+        error: error?.message || '导入失败',
+      });
+    }
+  }
+  return { canceled: false, items, failed };
+}
+
 function requestHeaders(key) {
   return { Authorization: `Bearer ${key}` };
 }
@@ -177,6 +220,22 @@ function registerGalleryHandlers() {
   });
 
   ipcMain.handle('list-gallery', async () => listGallery());
+
+  ipcMain.handle('import-gallery-images', async (_event, filePaths) => {
+    let selectedPaths = filePaths;
+    if (!Array.isArray(selectedPaths)) {
+      const result = await dialog.showOpenDialog({
+        title: '导入图片到作品库',
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      });
+      if (result.canceled || !result.filePaths.length) {
+        return { canceled: true, items: [], failed: [] };
+      }
+      selectedPaths = result.filePaths;
+    }
+    return importGalleryFiles(selectedPaths);
+  });
 
   ipcMain.handle('copy-image', async (_event, source) => {
     const image = nativeImage.createFromDataURL(source);

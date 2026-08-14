@@ -1,0 +1,201 @@
+.image-editor-host .tui-image-editor-help-menu.top .tie-panel-history {
+  top: 44px;
+  width: 240px;
+  height: min(320px, calc(100vh - var(--window-titlebar-height) - 76px));
+  padding: 8px;
+  border: 1px solid #7253a3;
+  border-radius: 6px;
+  background: #171421;
+  color: #ddd5e8;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.55);
+  transform: translateX(calc(-50% + 12px));
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list {
+  height: 100%;
+  padding-right: 3px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: #7650ad #211c2d;
+  scrollbar-width: thin;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list::-webkit-scrollbar-track {
+  border-radius: 3px;
+  background: #211c2d;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: #7650ad;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item {
+  height: 36px;
+  margin-bottom: 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #c8c0d3;
+  font-size: 11px;
+  line-height: normal;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item:hover:not(.disabled-item) {
+  border-color: #4e4165;
+  background: #282137;
+  color: #f2ecfb;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item
+  .tui-image-editor-history-item {
+  display: grid;
+  height: 34px;
+  padding: 0 7px;
+  grid-template-columns: 24px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 7px;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item
+  .tui-image-editor-history-item
+  span {
+  display: block;
+  width: auto;
+  height: auto;
+  overflow: hidden;
+  color: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item
+  .tui-image-editor-history-item
+  .history-item-icon,
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item
+  .tui-image-editor-history-item
+  .history-item-checkbox {
+  position: static;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item
+  .tui-image-editor-history-item
+  .history-item-checkbox {
+  visibility: hidden;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item.selected-item {
+  border-color: #8d63ca;
+  background: #382750;
+  color: #fff;
+  box-shadow: inset 3px 0 #a879ef;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item.selected-item
+  .history-item-checkbox {
+  display: grid;
+  visibility: visible;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu
+  .tie-panel-history
+  .history-list
+  .history-item.disabled-item {
+  color: #7f778a;
+  opacity: 0.42;
+}
+
+.image-editor-host
+  .tie-panel-history
+  .history-item.selected-item.loomora-mosaic-history
+  .loomora-mosaic-icon
+  i {
+  background: #d8c4ff;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu.top
+  .opened
+  .tie-panel-history::before {
+  top: -9px;
+  left: 111px;
+  border-right: 8px solid transparent;
+  border-bottom: 9px solid #7253a3;
+  border-left: 8px solid transparent;
+}
+
+.image-editor-host
+  .tui-image-editor-help-menu.top
+  .opened
+  .tie-panel-history::after {
+  position: absolute;
+  top: -7px;
+  left: 112px;
+  width: 0;
+  height: 0;
+  border-right: 7px solid transparent;
+  border-bottom: 8px solid #171421;
+  border-left: 7px solid transparent;
+  content: '';
+}

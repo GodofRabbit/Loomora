@@ -9,6 +9,7 @@ defineProps({
   resolution: { type: String, required: true },
   quality: { type: String, required: true },
   counter: { type: String, required: true },
+  promptLimit: { type: Number, required: true },
   modelOptions: { type: Array, required: true },
   ratioOptions: { type: Array, required: true },
   resolutionOptions: { type: Array, required: true },
@@ -52,7 +53,7 @@ const emit = defineEmits([
     <div class="prompt-box">
       <textarea
         :value="prompt"
-        maxlength="800"
+        :maxlength="promptLimit"
         placeholder="描述你的创意画面，例如：金色晨曦洒在云海之上，未来城市与自然共生"
         @input="emit('update:prompt', $event.target.value)"
       ></textarea>

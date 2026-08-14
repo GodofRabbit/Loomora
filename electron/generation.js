@@ -30,13 +30,18 @@ const MODEL_ALIASES = {
   'grok-imagine-image-quality': 'grok-imagine-image-pro',
 };
 const MODEL_GENERATION_LIMITS = {
-  'gpt-image-2': 14,
+  'gpt-image-2': 10,
   'gemini-3-pro-image-preview': 4,
   'gemini-3.1-flash-image-preview': 4,
   'grok-imagine-image': 1,
   'grok-imagine-image-pro': 1,
   'grok-imagine-image-lite': 1,
   'grok-imagine-image-edit': 3,
+};
+const DEFAULT_PROMPT_LIMIT = 800;
+const MODEL_PROMPT_LIMITS = {
+  'dall-e-2': 1000,
+  'dall-e-3': 4000,
 };
 
 const normalizeModel = (model) => MODEL_ALIASES[model] || model;
@@ -74,6 +79,28 @@ function referenceLimit(model) {
   if (model === 'grok-imagine-image-lite') return 0;
   if (model.startsWith('grok-imagine-image')) return 1;
   return 14;
+}
+
+function userFacingError(error) {
+  const details = [error?.message, error?.cause?.message, error?.cause?.code]
+    .filter(Boolean)
+    .join(' ');
+  if (/ENOTFOUND|getaddrinfo|ECONNREFUSED/i.test(details)) {
+    return '无法连接到图片服务，请检查接口地址和网络连接';
+  }
+  if (
+    /terminated|fetch failed|ECONNRESET|UND_ERR_SOCKET|socket hang up/i.test(
+      details,
+    )
+  ) {
+    return '网络连接意外中断，请检查网络后重试';
+  }
+  if (
+    /ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|AbortError|timed?\s*out/i.test(details)
+  ) {
+    return '图片服务响应超时，请稍后重试';
+  }
+  return error?.message || '图片生成失败，请稍后重试';
 }
 
 function generationBody(payload, model) {
@@ -133,11 +160,17 @@ async function generateOne(payload, batchIndex, event) {
   };
   if (!payload?.apiKey) return { ok: false, error: '请先填写 API Key' };
   if (!payload.prompt?.trim()) return { ok: false, error: '请输入提示词' };
+  const requestedModel = payload.model?.trim() || 'gpt-image-2';
+  const promptLimit =
+    MODEL_PROMPT_LIMITS[requestedModel] || DEFAULT_PROMPT_LIMIT;
+  if (payload.prompt.length > promptLimit) {
+    return { ok: false, error: `提示词最多支持 ${promptLimit} 个字符` };
+  }
 
   try {
     const endpoint = new URL(payload.endpoint || DEFAULT_ENDPOINT);
     const base = endpoint.origin;
-    const model = normalizeModel(payload.model?.trim() || 'gpt-image-2');
+    const model = normalizeModel(requestedModel);
     const references = Array.isArray(payload.reference)
       ? payload.reference
       : [];
@@ -212,7 +245,7 @@ async function generateOne(payload, batchIndex, event) {
     }
     throw new Error(`任务轮询超时，最后状态：${statusOf(last) || '未知'}`);
   } catch (error) {
-    return { ok: false, error: error.message };
+    return { ok: false, error: userFacingError(error) };
   }
 }
 
@@ -237,9 +270,11 @@ function registerGenerationHandler() {
       localPaths: successful.flatMap((result) => result.localPaths || []),
       folder: successful.find((result) => result.folder)?.folder,
       error: failed.length
-        ? failed
-            .map(({ result, index }) => `#${index + 1}: ${result.error}`)
-            .join('; ')
+        ? total === 1
+          ? failed[0].result.error
+          : failed
+              .map(({ result, index }) => `第 ${index + 1} 张：${result.error}`)
+              .join('；')
         : undefined,
       failedCount: failed.length,
     };

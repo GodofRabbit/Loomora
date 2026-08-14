@@ -52,9 +52,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
   .image-editor-status,
-  .mosaic-size-control {
-    display: none;
-  }
   .image-editor-actions {
     gap: 6px;
   }

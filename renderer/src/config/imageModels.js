@@ -1,9 +1,14 @@
 export const DEFAULT_ENDPOINT = 'https://www.zexitongxue.com';
 export const API_KEY_STORAGE = 'loomora-key';
 export const ENDPOINT_STORAGE = 'loomora-endpoint';
+export const DEFAULT_PROMPT_LIMIT = 800;
+export const promptLimits = {
+  'dall-e-2': 1000,
+  'dall-e-3': 4000,
+};
 
 export const modelOptions = [
-  { value: 'gpt-image-2', label: 'GPT Image 2', maxCount: 14 },
+  { value: 'gpt-image-2', label: 'GPT Image 2', maxCount: 10 },
   {
     value: 'gemini-3-pro-image-preview',
     label: 'Nano Banana Pro',

@@ -1,6 +1,16 @@
 import { nextTick, ref } from 'vue';
 import { editorLocale } from '../config/editorLocale';
 
+const BLEND_MODE_LABELS = {
+  add: '线性减淡',
+  diff: '差值',
+  subtract: '减去',
+  multiply: '正片叠底',
+  screen: '滤色',
+  lighten: '变亮',
+  darken: '变暗',
+};
+
 export function useImageEditor({
   getHost,
   closePreview,
@@ -20,6 +30,7 @@ export function useImageEditor({
   const overlay = ref(null);
   let imageEditor;
   let ImageEditorClass;
+  let colorPickerObserver;
   let mosaicPoints = [];
   let mosaicDrawing = false;
 
@@ -188,6 +199,7 @@ export function useImageEditor({
       canvas.toDataURL('image/png'),
       source.value.name,
     );
+    addMosaicHistoryEntry();
     mosaicPoints = [];
     clearOverlay();
     updateOverlay();
@@ -218,13 +230,153 @@ export function useImageEditor({
     overlay.value = canvas;
   }
 
-  function toggleMosaic() {
-    mosaicActive.value = !mosaicActive.value;
-    overlay.value?.classList.toggle('active', mosaicActive.value);
-    message.value = mosaicActive.value
-      ? '马赛克画笔已开启，拖动图片进行涂抹'
-      : '';
+  function setMosaicActive(active) {
+    mosaicActive.value = active;
+    overlay.value?.classList.toggle('active', active);
+    message.value = active ? '马赛克画笔已开启，拖动图片进行涂抹' : '';
     nextTick(updateOverlay);
+  }
+
+  function createMosaicIcon() {
+    const icon = document.createElement('span');
+    icon.className = 'loomora-mosaic-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    for (let index = 0; index < 9; index += 1) {
+      icon.appendChild(document.createElement('i'));
+    }
+    return icon;
+  }
+
+  function addMosaicHistoryEntry() {
+    const history = imageEditor?.ui?._historyMenu;
+    if (!history) return;
+
+    // TUI makes loadImage undoable but deliberately omits it from the visible history list.
+    history.add({ name: 'Mosaic' });
+    const item = history.items.at(-1);
+    const iconHost = item?.querySelector('.history-item-icon');
+    item?.classList.add('loomora-mosaic-history');
+    iconHost?.replaceChildren(createMosaicIcon());
+  }
+
+  function mountMosaicTools() {
+    const host = getHost();
+    const ui = imageEditor?.ui;
+    const menu = host?.querySelector('.tui-image-editor-menu');
+    const submenu = host?.querySelector('.tui-image-editor-submenu');
+    const helpMenu = host?.querySelector('.tui-image-editor-help-menu');
+    if (!host || !ui || !menu || !submenu || !helpMenu) return;
+
+    const button = document.createElement('li');
+    button.className =
+      'tie-btn-mosaic tui-image-editor-item loomora-mosaic-menu';
+    button.tabIndex = 0;
+    button.setAttribute('role', 'button');
+    button.setAttribute('aria-label', '马赛克');
+    button.setAttribute('tooltip-content', '马赛克');
+
+    button.appendChild(createMosaicIcon());
+    menu.appendChild(button);
+
+    const panel = document.createElement('div');
+    panel.className = 'tui-image-editor-menu-mosaic loomora-mosaic-submenu';
+    const controls = document.createElement('div');
+    controls.className = 'loomora-mosaic-controls';
+    const label = document.createElement('label');
+    label.textContent = '笔刷大小';
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '12';
+    range.max = '72';
+    range.step = '2';
+    range.value = String(mosaicSize.value);
+    range.setAttribute('aria-label', '马赛克笔刷大小');
+    const value = document.createElement('b');
+    value.textContent = `${mosaicSize.value}px`;
+    range.addEventListener('input', () => {
+      mosaicSize.value = Number(range.value);
+      value.textContent = `${mosaicSize.value}px`;
+    });
+    controls.append(label, range, value);
+    panel.appendChild(controls);
+    submenu.appendChild(panel);
+
+    // Register the custom tool with TUI so menu switching and canvas positioning stay native.
+    ui._buttonElements.mosaic = button;
+    ui.mosaic = {
+      changeStartMode: () => setMosaicActive(true),
+      changeStandbyMode: () => setMosaicActive(false),
+    };
+    const selectMosaic = () => ui.changeMenu('mosaic');
+    button.addEventListener('click', selectMosaic);
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      selectMosaic();
+    });
+
+    // Help tools bypass TUI's submenu switcher, so close mosaic before their actions run.
+    helpMenu.addEventListener(
+      'click',
+      (event) => {
+        if (!event.target.closest('.tui-image-editor-item')) return;
+        if (ui.submenu === 'mosaic') ui.changeMenu('mosaic');
+      },
+      true,
+    );
+  }
+
+  function exposeDetailedColorPickers() {
+    const host = getHost();
+    if (!host) return;
+
+    function decoratePickers() {
+      host.querySelectorAll('.color-picker-control').forEach((control) => {
+        control.classList.add('loomora-color-picker');
+      });
+      host
+        .querySelectorAll('.tui-colorpicker-palette-toggle-slider')
+        .forEach((button) => {
+          // TUI rebuilds this input after color changes, restoring its English label.
+          button.style.display = 'block';
+          button.value = '更多颜色';
+          button.setAttribute('aria-label', '打开详细取色器');
+        });
+      host.querySelectorAll('.tui-colorpicker-palette-hex').forEach((input) => {
+        input.placeholder = '#RRGGBB';
+        input.setAttribute('aria-label', 'HEX 颜色值');
+      });
+      host.querySelectorAll('.tui-colorpicker-huebar-handle').forEach((pin) => {
+        // The stock 4x8 black marker is nearly invisible against the dark popup.
+        pin.setAttribute('d', 'M-2 0 L7 5 L-2 10 Z');
+      });
+      host.querySelectorAll('#tie-filter-tint-opacity').forEach((slider) => {
+        const control = slider.parentElement;
+        const label = control?.querySelector(':scope > label');
+        control?.classList.add('loomora-opacity-control');
+        if (label && label.textContent !== '不透明度') {
+          label.textContent = '不透明度';
+        }
+      });
+      host
+        .querySelectorAll('.tui-image-editor-selectlist-wrap option')
+        .forEach((option) => {
+          const label = BLEND_MODE_LABELS[option.value] || option.value;
+          if (option.textContent !== label) option.textContent = label;
+        });
+      host
+        .querySelectorAll('.tui-image-editor-selectlist li')
+        .forEach((item) => {
+          const value = item.dataset.item;
+          const label = BLEND_MODE_LABELS[value] || value;
+          if (item.textContent !== label) item.textContent = label;
+        });
+    }
+
+    decoratePickers();
+    colorPickerObserver?.disconnect();
+    colorPickerObserver = new MutationObserver(decoratePickers);
+    colorPickerObserver.observe(host, { childList: true, subtree: true });
   }
 
   async function openEditor(item) {
@@ -239,6 +391,8 @@ export function useImageEditor({
         const module = await import('tui-image-editor');
         ImageEditorClass = module.default || module;
       }
+      const host = getHost();
+      const availableCanvasHeight = Math.max(180, host.clientHeight - 56 - 150);
       imageEditor = new ImageEditorClass(getHost(), {
         includeUI: {
           loadImage: { path: source.value.src, name: source.value.name },
@@ -253,17 +407,18 @@ export function useImageEditor({
             'text',
             'filter',
           ],
-          initMenu: 'filter',
           uiSize: { width: '100%', height: '100%' },
           menuBarPosition: 'bottom',
         },
         cssMaxWidth: Math.max(640, window.innerWidth - 100),
-        cssMaxHeight: Math.max(400, window.innerHeight - 270),
+        cssMaxHeight: availableCanvasHeight,
         usageStatistics: false,
       });
       message.value = '';
       await nextTick();
+      exposeDetailedColorPickers();
       createOverlay();
+      mountMosaicTools();
       updateOverlay();
     } catch (error) {
       status.value = error?.message || '图片编辑器加载失败';
@@ -275,6 +430,8 @@ export function useImageEditor({
     if (saving.value && !force) return;
     imageEditor?.destroy();
     imageEditor = undefined;
+    colorPickerObserver?.disconnect();
+    colorPickerObserver = undefined;
     overlay.value?.remove();
     overlay.value = null;
     mosaicActive.value = false;
@@ -326,10 +483,7 @@ export function useImageEditor({
     open,
     saving,
     message,
-    mosaicActive,
-    mosaicSize,
     updateOverlay,
-    toggleMosaic,
     openEditor,
     close,
     save,

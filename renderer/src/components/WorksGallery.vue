@@ -1,4 +1,6 @@
 <script setup>
+import { ref } from 'vue';
+
 defineProps({
   view: { type: String, required: true },
   images: { type: Array, required: true },
@@ -7,12 +9,50 @@ defineProps({
   galleryColumns: { type: Array, required: true },
   galleryColumnCount: { type: Number, required: true },
   galleryLoading: Boolean,
+  galleryImporting: Boolean,
 });
-const emit = defineEmits(['preview', 'context-menu']);
+const emit = defineEmits(['preview', 'context-menu', 'import', 'import-drop']);
+const dragActive = ref(false);
+
+function acceptsFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes('Files');
+}
+
+function onDragEnter(event) {
+  if (acceptsFiles(event)) dragActive.value = true;
+}
+
+function onDragOver(event) {
+  if (!acceptsFiles(event)) return;
+  event.dataTransfer.dropEffect = 'copy';
+  dragActive.value = true;
+}
+
+function onDragLeave(event) {
+  if (
+    event.relatedTarget instanceof Node &&
+    event.currentTarget.contains(event.relatedTarget)
+  ) {
+    return;
+  }
+  dragActive.value = false;
+}
+
+function onDrop(event) {
+  dragActive.value = false;
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (files.length) emit('import-drop', files);
+}
 </script>
 
 <template>
-  <section class="works" :class="{ 'library-view': view === 'gallery' }">
+  <section
+    class="works"
+    :class="{
+      'library-view': view === 'gallery',
+      'library-loading-view': view === 'gallery' && galleryLoading,
+    }"
+  >
     <div class="works-head">
       <div>
         <span class="section-kicker">灵感作品</span>
@@ -26,15 +66,25 @@ const emit = defineEmits(['preview', 'context-menu']);
           }}
         </h2>
       </div>
-      <span>{{
-        view === 'gallery'
-          ? galleryLoading
-            ? '正在读取本地作品...'
-            : `${gallery.length} 张本地作品`
-          : images.length
-            ? `${images.length} 张作品`
-            : '生成的图片将在这里展示'
-      }}</span>
+      <div class="works-head-actions">
+        <span>{{
+          view === 'gallery'
+            ? galleryLoading
+              ? '正在读取本地作品...'
+              : `${gallery.length} 张本地作品`
+            : images.length
+              ? `${images.length} 张作品`
+              : '生成的图片将在这里展示'
+        }}</span>
+        <button
+          v-if="view === 'gallery'"
+          class="gallery-import-button"
+          :disabled="galleryLoading || galleryImporting"
+          @click="emit('import')"
+        >
+          ＋ {{ galleryImporting ? '导入中...' : '导入图片' }}
+        </button>
+      </div>
     </div>
     <div
       v-if="view === 'create'"
@@ -60,8 +110,17 @@ const emit = defineEmits(['preview', 'context-menu']);
       :class="{
         empty: galleryLoading || !gallery.length,
         loading: galleryLoading,
+        'drag-active': dragActive,
       }"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent="onDragOver"
+      @dragleave="onDragLeave"
+      @drop.prevent="onDrop"
     >
+      <div v-if="dragActive" class="library-drop-overlay">
+        <b>释放以导入图片</b>
+        <small>支持 JPG、PNG 和 WEBP，可同时导入多张</small>
+      </div>
       <div
         v-for="(column, columnIndex) in galleryLoading || !gallery.length
           ? []

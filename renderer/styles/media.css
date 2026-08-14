@@ -207,23 +207,6 @@
   justify-content: flex-end;
   gap: 9px;
 }
-.mosaic-size-control {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #b5adbf;
-  font-size: 12px;
-}
-.mosaic-size-control input {
-  width: 78px;
-  accent-color: #a273ff;
-}
-.mosaic-size-control b {
-  min-width: 38px;
-  color: #d9cfff;
-  font-size: 11px;
-  font-weight: 500;
-}
 .image-editor-actions button {
   height: 36px;
   padding: 0 15px;
@@ -231,28 +214,6 @@
   border-radius: 6px;
   background: #242231;
   color: #ded8e8;
-}
-.image-editor-actions .mosaic-toggle {
-  border-color: #7452a8;
-  background: #2c2140;
-  color: #d8c8f3;
-}
-.image-editor-actions .mosaic-toggle.active {
-  border-color: #a273ff;
-  background: #6a42ad;
-  color: #fff;
-  box-shadow: 0 0 16px rgba(148, 95, 255, 0.35);
-}
-.image-editor-actions .ocr-editor-button {
-  border-color: #477e82;
-  background: #183537;
-  color: #d7f9f6;
-}
-.image-editor-actions .save-edited-image {
-  border-color: #7751cc;
-  background: linear-gradient(135deg, #8f62e8, #6741b8);
-  color: #fff;
-  font-weight: 700;
 }
 .image-editor-host {
   position: relative;
@@ -287,13 +248,267 @@
 .image-editor-host .tui-image-editor-main {
   top: 0;
 }
+.image-editor-host .tui-image-editor-main-container {
+  bottom: 56px;
+}
+.image-editor-host .tui-image-editor-controls {
+  height: 56px;
+}
 .image-editor-host .tui-image-editor-menu {
   background-color: #151321;
+}
+.image-editor-host .tui-image-editor-menu > .tui-image-editor-item {
+  display: inline-flex;
+  width: 40px;
+  height: 38px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
 }
 .image-editor-host .tui-image-editor-submenu {
   background-color: #1b1828;
 }
+.image-editor-host .loomora-mosaic-menu:focus-visible {
+  outline: 2px solid #9a68ff;
+  outline-offset: 2px;
+}
+.image-editor-host .loomora-mosaic-icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  grid-template-columns: repeat(3, 5px);
+  grid-template-rows: repeat(3, 5px);
+  place-content: center;
+  gap: 2px;
+}
+.image-editor-host .loomora-mosaic-icon i {
+  border-radius: 1px;
+  background: #aaa4b5;
+}
+.image-editor-host .loomora-mosaic-menu:hover .loomora-mosaic-icon i {
+  background: #fff;
+}
+.image-editor-host .loomora-mosaic-menu.active .loomora-mosaic-icon i {
+  background: #62439a;
+}
+.image-editor-host
+  .tui-image-editor-main.tui-image-editor-menu-mosaic
+  .tui-image-editor-submenu {
+  display: table;
+}
+.image-editor-host
+  .tui-image-editor-main.tui-image-editor-menu-mosaic
+  .loomora-mosaic-submenu {
+  display: table-cell;
+}
+.image-editor-host .loomora-mosaic-controls {
+  display: inline-flex;
+  height: 52px;
+  padding: 0 12px;
+  align-items: center;
+  gap: 10px;
+  color: #d9d2e4;
+}
+.image-editor-host .loomora-mosaic-controls label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.image-editor-host .loomora-mosaic-controls input {
+  height: 18px;
+  width: 180px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #9a68ff;
+}
+.image-editor-host .loomora-mosaic-controls b {
+  display: inline-grid;
+  width: 44px;
+  height: 24px;
+  border: 1px solid #4e4165;
+  border-radius: 2px;
+  place-items: center;
+  background: #1c1928;
+  color: #f1ebfc;
+  font-size: 11px;
+  font-weight: 500;
+}
+#app .loomora-color-picker {
+  /* Anchor the variable-height detail picker above the bottom toolbar. */
+  top: auto !important;
+  bottom: calc(100% + 10px);
+  width: 232px;
+  height: auto !important;
+  padding: 14px;
+  border: 1px solid #7253a3;
+  border-radius: 6px;
+  background: #211a30;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.58);
+}
+#app .loomora-color-picker .tui-colorpicker-container,
+#app .loomora-color-picker .tui-colorpicker-palette-container,
+#app .loomora-color-picker .tui-colorpicker-palette-container ul {
+  width: 100%;
+}
+#app .loomora-color-picker .tui-colorpicker-palette-container ul {
+  display: grid;
+  grid-template-columns: repeat(8, 20px);
+  justify-content: space-between;
+  row-gap: 6px;
+}
+#app .loomora-color-picker .tui-colorpicker-palette-container li {
+  float: none;
+  padding-right: 0;
+}
+#app .loomora-color-picker div.tui-colorpicker-clearfix {
+  display: grid;
+  width: 100%;
+  height: 34px;
+  margin-top: 10px;
+  padding: 0;
+  grid-template-columns: 68px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 7px;
+  overflow: visible !important;
+  border: 0;
+  background: transparent;
+}
+#app .loomora-color-picker .tui-colorpicker-palette-toggle-slider {
+  display: block !important;
+  float: none;
+  width: 68px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #9b70e2;
+  border-radius: 5px;
+  background: #6541a9;
+  color: #fff;
+  font-size: 11px;
+  line-height: 26px;
+}
+#app .loomora-color-picker .tui-colorpicker-palette-toggle-slider:hover {
+  background: #7952be;
+  transform: none;
+}
+#app .loomora-color-picker .tui-colorpicker-palette-hex {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  margin-top: 0;
+  padding: 0 8px;
+  border: 1px solid #bcb5c7;
+  border-radius: 5px;
+  outline: 0;
+  background: #fff;
+  color: #000;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+}
+#app .loomora-color-picker .tui-colorpicker-palette-hex:focus {
+  border-color: #9b70e2;
+  box-shadow: 0 0 0 2px rgba(155, 112, 226, 0.2);
+}
+#app .loomora-color-picker .tui-colorpicker-palette-hex::placeholder {
+  color: #666;
+  opacity: 1;
+}
+#app .loomora-color-picker .tui-colorpicker-palette-preview {
+  float: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #bcb5c7;
+}
+#app .loomora-color-picker .tui-colorpicker-slider-container {
+  width: 100%;
+  height: 172px;
+  margin: 10px auto 0;
+}
+#app .loomora-color-picker .tui-colorpicker-slider-left,
+#app .loomora-color-picker .tui-colorpicker-svg-slider {
+  width: 170px;
+  height: 170px;
+}
+#app .loomora-color-picker .tui-colorpicker-slider-right {
+  width: 24px;
+  height: 170px;
+}
+#app .loomora-color-picker .tui-colorpicker-svg-huebar {
+  height: 170px;
+}
+#app .loomora-color-picker .tui-colorpicker-huebar-handle {
+  fill: #fff;
+  stroke: #21152f;
+  stroke-width: 1.5px;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.9));
+  paint-order: stroke fill;
+}
+#app .loomora-color-picker .loomora-opacity-control {
+  display: grid;
+  width: 100%;
+  min-height: 34px;
+  margin-top: 10px;
+  padding-top: 10px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid rgba(155, 112, 226, 0.28);
+}
+#app .loomora-color-picker .loomora-opacity-control > label {
+  color: #d8ccef;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+#app .loomora-color-picker #tie-filter-tint-opacity {
+  min-width: 0;
+}
+#app .loomora-color-picker #tie-filter-tint-opacity .tui-image-editor-range {
+  top: 0;
+  margin-left: 0;
+}
+#app .loomora-color-picker .tui-image-editor-selectlist-wrap select,
+#app .loomora-color-picker .tui-image-editor-selectlist {
+  background: #fff;
+  color: #000;
+}
+#app .loomora-color-picker .tui-image-editor-selectlist li {
+  color: #000;
+}
+#app .loomora-color-picker .triangle {
+  bottom: -9px;
+  border-right-width: 8px;
+  border-top: 9px solid #7253a3;
+  border-left-width: 8px;
+}
+#app .loomora-color-picker .triangle::after {
+  position: absolute;
+  top: -9px;
+  left: -7px;
+  width: 0;
+  height: 0;
+  border-right: 7px solid transparent;
+  border-top: 8px solid #211a30;
+  border-left: 7px solid transparent;
+  content: '';
+}
 .image-editor-host .tui-image-editor-help-menu {
   border-radius: 6px;
   background-color: #1c1928;
+}
+.image-editor-host .tui-image-editor-help-menu.top {
+  position: fixed;
+  top: calc(var(--window-titlebar-height) + 11px);
+  left: 50%;
+  z-index: 4;
+  display: inline-flex;
+  width: auto;
+  height: 36px;
+  padding: 0 6px;
+  align-items: center;
+  transform: translateX(-50%);
+}
+.image-editor-host .tui-image-editor-help-menu.top > .tui-image-editor-item {
+  margin: 0 2px;
+  padding: 4px 5px 2px;
 }

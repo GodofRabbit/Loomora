@@ -20,12 +20,14 @@ const settingsOpen = ref(false);
 const toast = ref(null);
 const gallery = ref([]);
 const galleryLoading = ref(false);
+const galleryImporting = ref(false);
 const galleryColumnCount = ref(4);
 const preview = ref(null);
 const contextMenu = ref(null);
 const scrollContainer = ref(null);
 const scrollThumbTop = ref(0);
 const scrollThumbHeight = ref(80);
+const scrollbarVisible = ref(false);
 const editorModal = ref(null);
 let toastTimer;
 let scrollResizeObserver;
@@ -60,6 +62,7 @@ const {
   qualityOptions,
   maxReferences,
   maxCount,
+  promptLimit,
   counter,
   modelOptions,
 } = form;
@@ -96,6 +99,9 @@ const editor = useImageEditor({
 function updateScrollbar() {
   const element = scrollContainer.value;
   if (!element) return;
+  scrollbarVisible.value =
+    !galleryLoading.value && element.scrollHeight > element.clientHeight + 1;
+  if (!scrollbarVisible.value) return;
   const trackHeight = element.clientHeight - 24;
   scrollThumbHeight.value = Math.max(
     48,
@@ -272,6 +278,8 @@ async function openGallery() {
   view.value = 'gallery';
   if (galleryLoading.value) return;
   galleryLoading.value = true;
+  scrollbarVisible.value = false;
+  if (scrollContainer.value) scrollContainer.value.scrollTop = 0;
   await nextTick();
   try {
     gallery.value = sortGalleryItems(await window.forge.listGallery());
@@ -282,6 +290,35 @@ async function openGallery() {
   } finally {
     galleryLoading.value = false;
     nextTick(updateScrollbar);
+  }
+}
+
+async function importGalleryImages(files) {
+  if (galleryImporting.value) return;
+  galleryImporting.value = true;
+  try {
+    const result = await window.forge.importGalleryImages(files);
+    if (result.canceled) return;
+    if (result.items.length) {
+      gallery.value = sortGalleryItems([...result.items, ...gallery.value]);
+    }
+    const importedCount = result.items.length;
+    const failedCount = result.failed.length;
+    if (!importedCount && failedCount) {
+      status.value = `图片导入失败：${result.failed[0].error}`;
+      showToast(status.value, 'error');
+    } else {
+      status.value = failedCount
+        ? `成功导入 ${importedCount} 张图片，${failedCount} 张失败`
+        : `成功导入 ${importedCount} 张图片`;
+      showToast(status.value, failedCount ? 'error' : 'success');
+    }
+    nextTick(updateScrollbar);
+  } catch (error) {
+    status.value = error?.message || '图片导入失败';
+    showToast(status.value, 'error');
+  } finally {
+    galleryImporting.value = false;
   }
 }
 
@@ -380,6 +417,7 @@ onBeforeUnmount(() => {
         v-model:count="count"
         :reference="reference"
         :counter="counter"
+        :prompt-limit="promptLimit"
         :model-options="modelOptions"
         :ratio-options="ratioOptions"
         :resolution-options="resolutionOptions"
@@ -404,8 +442,11 @@ onBeforeUnmount(() => {
         :gallery-columns="galleryColumns"
         :gallery-column-count="galleryColumnCount"
         :gallery-loading="galleryLoading"
+        :gallery-importing="galleryImporting"
         @preview="openPreview"
         @context-menu="showImageMenu"
+        @import="importGalleryImages()"
+        @import-drop="importGalleryImages"
       />
     </main>
     <ImageLightbox
@@ -425,11 +466,7 @@ onBeforeUnmount(() => {
       :source="editor.source.value"
       :status="editor.message.value"
       :saving="editor.saving.value"
-      :mosaic-active="editor.mosaicActive.value"
-      :mosaic-size="editor.mosaicSize.value"
       :ocr-busy="ocr.busy.value"
-      @update:mosaic-size="editor.mosaicSize.value = $event"
-      @toggle-mosaic="editor.toggleMosaic"
       @recognize="editor.recognizeEditorText"
       @close="editor.close()"
       @save="editor.save"
@@ -461,7 +498,7 @@ onBeforeUnmount(() => {
       @save="saveSettings"
     />
     <ToastMessage v-if="toast" :toast="toast" @close="toast = null" />
-    <div class="custom-scrollbar" aria-hidden="true">
+    <div v-show="scrollbarVisible" class="custom-scrollbar" aria-hidden="true">
       <div
         class="custom-scrollbar-thumb"
         :style="{
