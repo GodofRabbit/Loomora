@@ -9,10 +9,14 @@ contextBridge.exposeInMainWorld('forge', {
     return () => ipcRenderer.removeListener('generation-update', listener);
   },
   listGallery: () => ipcRenderer.invoke('list-gallery'),
-  listConversationHistory: () =>
-    ipcRenderer.invoke('list-conversation-history'),
+  listConversationHistory: (payload) =>
+    ipcRenderer.invoke('list-conversation-history', payload),
   saveConversationTurn: (turn) =>
     ipcRenderer.invoke('save-conversation-turn', turn),
+  findConversationByImage: (filePath) =>
+    ipcRenderer.invoke('find-conversation-by-image', filePath),
+  deleteConversationTurn: (turnId) =>
+    ipcRenderer.invoke('delete-conversation-turn', turnId),
   importGalleryImages: (files) => {
     const filePaths = files
       ? Array.from(files, (file) => webUtils.getPathForFile(file)).filter(

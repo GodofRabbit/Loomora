@@ -2,6 +2,8 @@
 defineProps({ menu: { type: Object, required: true } });
 defineEmits([
   'copy',
+  'reference',
+  'regenerate',
   'download',
   'recognize',
   'edit',
@@ -18,6 +20,10 @@ defineEmits([
     @click.stop
   >
     <button @click="$emit('copy')"><span>▣</span>复制</button>
+    <button @click="$emit('reference')"><span>＋</span>作为参考图创作</button>
+    <button v-if="menu.regeneratable" @click="$emit('regenerate')">
+      <span>↻</span>重新生成
+    </button>
     <button @click="$emit('download')"><span>↓</span>下载</button>
     <button @click="$emit('recognize')"><span>文</span>识别文字</button>
     <button v-if="menu.editable" @click="$emit('edit')">

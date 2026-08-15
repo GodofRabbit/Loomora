@@ -19,7 +19,7 @@
     font-size: 11px;
   }
   .gallery-timeline button b {
-    color: #8cdff0;
+    color: #c9b6ff;
     font-size: 10px;
   }
 }
@@ -33,7 +33,8 @@
   }
   .gallery-select-button,
   .gallery-export-button,
-  .gallery-import-button {
+  .gallery-import-button,
+  .conversation-page-button {
     padding: 0 10px;
     font-size: 12px;
   }
@@ -86,7 +87,8 @@
   }
   .gallery-select-button,
   .gallery-export-button,
-  .gallery-import-button {
+  .gallery-import-button,
+  .conversation-page-button {
     height: 34px;
     padding: 0 8px;
     font-size: 11px;

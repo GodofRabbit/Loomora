@@ -47,6 +47,7 @@ const ratioLabels = {
   '2:3': '2:3 竖版 / 海报',
 };
 const legacyOpenAiEndpointPattern = /^https:\/\/api\.openai\.com\/v1\/?$/i;
+const CONVERSATION_PAGE_SIZE = 10;
 
 function normalizeEndpoint(value) {
   const endpoint = String(value || '').trim();
@@ -70,6 +71,10 @@ export function useGenerationForm({ status, showToast }) {
   const count = ref(1);
   const reference = ref([]);
   const conversationHistory = ref([]);
+  const conversationLoading = ref(false);
+  const conversationOffset = ref(0);
+  const conversationTotal = ref(0);
+  const conversationLimit = ref(CONVERSATION_PAGE_SIZE);
   const images = ref([]);
   const imagePaths = ref([]);
   const liveImage = ref('');
@@ -118,6 +123,12 @@ export function useGenerationForm({ status, showToast }) {
       modelOptions.find((option) => option.value === normalizedModel.value)
         ?.maxCount || 1,
   );
+  const conversationHasOlder = computed(
+    () =>
+      conversationOffset.value + conversationHistory.value.length <
+      conversationTotal.value,
+  );
+  const conversationHasNewer = computed(() => conversationOffset.value > 0);
   const qualityOptionsValue = computed(() => qualityOptions);
 
   watch(model, () => {
@@ -148,6 +159,10 @@ export function useGenerationForm({ status, showToast }) {
   }
 
   function createConversationTurn(total) {
+    if (conversationOffset.value !== 0) {
+      conversationOffset.value = 0;
+      conversationHistory.value = [];
+    }
     const turn = {
       id: `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       createdAt: Date.now(),
@@ -177,6 +192,15 @@ export function useGenerationForm({ status, showToast }) {
       completedAt: null,
     };
     conversationHistory.value.push(turn);
+    if (conversationHistory.value.length > conversationLimit.value) {
+      conversationHistory.value = conversationHistory.value.slice(
+        -conversationLimit.value,
+      );
+    }
+    conversationTotal.value = Math.max(
+      conversationTotal.value + 1,
+      conversationHistory.value.length,
+    );
     activeConversationId.value = turn.id;
     return turn;
   }
@@ -279,22 +303,52 @@ export function useGenerationForm({ status, showToast }) {
     }
   }
 
-  async function loadConversationHistory() {
+  async function loadConversationHistory(offset = conversationOffset.value) {
     if (!window.forge?.listConversationHistory) return;
+    conversationLoading.value = true;
     try {
-      const loaded = await window.forge.listConversationHistory();
-      conversationHistory.value = Array.isArray(loaded)
-        ? loaded.map(normalizeConversationTurn)
-        : [];
-      const latestTurn = [...conversationHistory.value]
-        .reverse()
-        .find((turn) => turn.images.length || turn.imagePaths.length);
+      const result = await window.forge.listConversationHistory({
+        offset,
+        limit: conversationLimit.value,
+      });
+      const items = Array.isArray(result)
+        ? result
+        : Array.isArray(result?.items)
+          ? result.items
+          : [];
+      conversationHistory.value = items.map(normalizeConversationTurn);
+      conversationOffset.value =
+        typeof result?.offset === 'number' ? result.offset : offset;
+      conversationTotal.value = Number(result?.total) || items.length;
+      conversationLimit.value = Number(result?.limit) || conversationLimit.value;
+      const latestTurn =
+        conversationOffset.value === 0
+          ? [...conversationHistory.value]
+              .reverse()
+              .find((turn) => turn.images.length || turn.imagePaths.length)
+          : null;
       images.value = latestTurn ? [...latestTurn.images] : [];
       imagePaths.value = latestTurn ? [...latestTurn.imagePaths] : [];
     } catch (error) {
       status.value = formatUserMessage(error, '创作对话读取失败，请稍后重试');
       showToast(status.value, 'error');
+    } finally {
+      conversationLoading.value = false;
     }
+  }
+
+  function loadOlderConversations() {
+    if (conversationLoading.value || !conversationHasOlder.value) return;
+    loadConversationHistory(
+      conversationOffset.value + conversationHistory.value.length,
+    );
+  }
+
+  function loadNewerConversations() {
+    if (conversationLoading.value || !conversationHasNewer.value) return;
+    loadConversationHistory(
+      Math.max(0, conversationOffset.value - conversationLimit.value),
+    );
   }
 
   function syncConversationImagePaths(oldPath, nextPath) {
@@ -322,6 +376,13 @@ export function useGenerationForm({ status, showToast }) {
       });
       turn.imagePaths = nextPaths;
       turn.images = nextImages;
+      turn.progress = {
+        ...turn.progress,
+        completed: Math.min(
+          Number(turn.progress?.completed) || nextPaths.length,
+          nextPaths.length,
+        ),
+      };
     });
   }
 
@@ -452,6 +513,53 @@ export function useGenerationForm({ status, showToast }) {
     }
     const selected = await window.forge.pickImage();
     if (selected) reference.value.push(selected);
+  }
+
+  function addReferenceFromImage(data, name = '作品参考图.png') {
+    if (reference.value.length >= maxReferences.value) {
+      status.value = `${normalizedModel.value} 最多添加 ${maxReferences.value} 张参考图`;
+      showToast(status.value, 'error');
+      return false;
+    }
+    const source = String(data || '');
+    if (!source.startsWith('data:image/')) {
+      status.value = '图片数据无效，无法作为参考图';
+      showToast(status.value, 'error');
+      return false;
+    }
+    reference.value.push({
+      name: String(name || '作品参考图.png'),
+      data: source,
+    });
+    status.value = '已添加为参考图，可以继续创作';
+    showToast(status.value);
+    return true;
+  }
+
+  async function regenerateFromConversation(turn = {}) {
+    if (busy.value) {
+      status.value = '已有图片正在生成，请稍候';
+      showToast(status.value, 'error');
+      return;
+    }
+    if (!turn.prompt) {
+      status.value = '未找到可重新生成的提示词';
+      showToast(status.value, 'error');
+      return;
+    }
+    prompt.value = String(turn.prompt || '');
+    if (turn.model) model.value = String(turn.model);
+    if (turn.ratio) ratio.value = String(turn.ratio);
+    if (turn.resolution) resolution.value = String(turn.resolution);
+    quality.value = turn.quality || 'auto';
+    outputFormat.value = turn.outputFormat || 'png';
+    count.value = Math.min(
+      maxCount.value,
+      Math.max(1, Number(turn.count) || 1),
+    );
+    reference.value = [];
+    status.value = '正在按历史记录重新生成...';
+    await generate();
   }
 
   function removeReference(index) {
@@ -605,6 +713,12 @@ export function useGenerationForm({ status, showToast }) {
     count,
     reference,
     conversationHistory,
+    conversationLoading,
+    conversationOffset,
+    conversationTotal,
+    conversationLimit,
+    conversationHasOlder,
+    conversationHasNewer,
     images,
     imagePaths,
     liveImage,
@@ -633,9 +747,13 @@ export function useGenerationForm({ status, showToast }) {
     resetGenerationState,
     applyGenerationUpdate,
     loadConversationHistory,
+    loadOlderConversations,
+    loadNewerConversations,
     persistConversationTurn,
     syncConversationImagePaths,
     removeConversationImagePath,
+    addReferenceFromImage,
+    regenerateFromConversation,
     pickReference,
     removeReference,
     resetSettingsDraft,

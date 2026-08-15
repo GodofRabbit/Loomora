@@ -4,6 +4,12 @@ import { computed, ref } from 'vue';
 const props = defineProps({
   view: { type: String, required: true },
   conversationHistory: { type: Array, default: () => [] },
+  conversationLoading: Boolean,
+  conversationOffset: { type: Number, default: 0 },
+  conversationTotal: { type: Number, default: 0 },
+  conversationLimit: { type: Number, default: 10 },
+  conversationHasOlder: Boolean,
+  conversationHasNewer: Boolean,
   images: { type: Array, required: true },
   imagePaths: { type: Array, required: true },
   liveImage: { type: String, default: '' },
@@ -31,6 +37,11 @@ const emit = defineEmits([
   'toggle-selection-mode',
   'export-current',
   'export-selected',
+  'load-older-conversations',
+  'load-newer-conversations',
+  'copy-prompt',
+  'edit-prompt',
+  'delete-conversation',
 ]);
 const dragActive = ref(false);
 const batchActive = computed(
@@ -49,7 +60,19 @@ const streamActive = computed(
 const generationTotal = computed(() =>
   Math.max(1, Number(props.liveProgress?.total) || props.images.length || 1),
 );
+const conversationPageText = computed(() => {
+  const total =
+    Number(props.conversationTotal) || props.conversationHistory.length;
+  if (!total) return '';
+  if (props.conversationLoading) return '正在读取创作对话...';
+  const count = props.conversationHistory.length;
+  if (!props.conversationOffset) return `最近 ${count}/${total} 轮对话`;
+  const start = props.conversationOffset + 1;
+  const end = Math.min(props.conversationOffset + count, total);
+  return `更早记录 ${start}-${end} / ${total}`;
+});
 const createHeadText = computed(() => {
+  if (conversationPageText.value) return conversationPageText.value;
   if (props.conversationHistory.length) {
     return `${props.conversationHistory.length} 轮创作对话，可向上回看历史`;
   }
@@ -123,6 +146,14 @@ function turnTime(turn) {
   });
 }
 
+function turnDisplayIndex(index) {
+  const total =
+    Number(props.conversationTotal) || props.conversationHistory.length;
+  const count = props.conversationHistory.length;
+  if (!total || !count) return index + 1;
+  return Math.max(1, total - props.conversationOffset - count + 1) + index;
+}
+
 function turnMeta(turn) {
   return [
     turn.model,
@@ -194,6 +225,24 @@ function turnSlots(turn) {
           拖拽图片到作品库即可导入
         </span>
         <button
+          v-if="view === 'create' && conversationTotal > conversationLimit"
+          class="conversation-page-button"
+          :disabled="conversationLoading || !conversationHasNewer"
+          title="查看较新的 10 轮对话"
+          @click="emit('load-newer-conversations')"
+        >
+          ↑ 较新
+        </button>
+        <button
+          v-if="view === 'create' && conversationTotal > conversationLimit"
+          class="conversation-page-button"
+          :disabled="conversationLoading || !conversationHasOlder"
+          title="查看更早的 10 轮对话"
+          @click="emit('load-older-conversations')"
+        >
+          ↓ 更早
+        </button>
+        <button
           v-if="view === 'gallery'"
           class="gallery-select-button"
           :class="{ active: gallerySelectionMode }"
@@ -258,11 +307,35 @@ function turnSlots(turn) {
         <div class="generation-chat-message user">
           <div class="generation-chat-bubble generation-chat-user-bubble">
             <div class="generation-chat-user-head">
-              <b>第 {{ turnIndex + 1 }} 轮</b>
+              <b>第 {{ turnDisplayIndex(turnIndex) }} 轮</b>
               <small>{{ turnTime(turn) }}</small>
             </div>
             <p>{{ turn.prompt }}</p>
             <small>{{ turnMeta(turn) }}</small>
+            <div class="generation-chat-prompt-actions">
+              <button
+                type="button"
+                title="复制这条提示词"
+                @click="emit('copy-prompt', turn)"
+              >
+                复制
+              </button>
+              <button
+                type="button"
+                title="回填到创作面板继续编辑"
+                @click="emit('edit-prompt', turn)"
+              >
+                编辑
+              </button>
+              <button
+                type="button"
+                class="danger"
+                title="删除这轮对话记录，不删除作品库图片"
+                @click="emit('delete-conversation', turn)"
+              >
+                删除
+              </button>
+            </div>
           </div>
           <span class="generation-chat-avatar">我</span>
         </div>

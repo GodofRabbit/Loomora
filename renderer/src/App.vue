@@ -55,6 +55,12 @@ const {
   count,
   reference,
   conversationHistory,
+  conversationLoading,
+  conversationOffset,
+  conversationTotal,
+  conversationLimit,
+  conversationHasOlder,
+  conversationHasNewer,
   images,
   imagePaths,
   liveImage,
@@ -81,8 +87,12 @@ const {
   modelOptions,
   applyGenerationUpdate,
   loadConversationHistory,
+  loadOlderConversations,
+  loadNewerConversations,
   syncConversationImagePaths,
   removeConversationImagePath,
+  addReferenceFromImage,
+  regenerateFromConversation,
 } = form;
 
 const ocr = useOcr(showToast);
@@ -371,14 +381,26 @@ function movePreview(step) {
   ocr.close();
 }
 
-function showImageMenu(event, source, filePath = '', editable = false) {
+async function findGenerationTurnByImage(filePath) {
+  if (!filePath || !window.forge?.findConversationByImage) return null;
+  try {
+    return await window.forge.findConversationByImage(filePath);
+  } catch {
+    return null;
+  }
+}
+
+async function showImageMenu(event, source, filePath = '', editable = false) {
   event.preventDefault();
+  const generationTurn = await findGenerationTurnByImage(filePath);
   contextMenu.value = {
     x: event.clientX,
     y: event.clientY,
     src: source,
     filePath,
     editable,
+    regeneratable: Boolean(generationTurn),
+    generationTurn,
   };
 }
 
@@ -392,6 +414,97 @@ async function copyContextImage() {
   } finally {
     contextMenu.value = null;
   }
+}
+
+async function copyConversationPrompt(turn) {
+  const text = String(turn?.prompt || '').trim();
+  if (!text) return;
+  try {
+    await window.forge.copyText(text);
+    status.value = '提示词已复制';
+    showToast(status.value);
+  } catch (error) {
+    status.value = formatUserMessage(error, '复制提示词失败，请稍后重试');
+    showToast(status.value, 'error');
+  }
+}
+
+function editConversationPrompt(turn) {
+  if (!turn?.prompt) return;
+  prompt.value = turn.prompt;
+  if (turn.model) model.value = turn.model;
+  if (turn.ratio) ratio.value = turn.ratio;
+  if (turn.resolution) resolution.value = turn.resolution;
+  if (turn.quality) quality.value = turn.quality;
+  if (turn.outputFormat) outputFormat.value = turn.outputFormat;
+  count.value = Math.min(
+    maxCount.value,
+    Math.max(1, Number(turn.count) || 1),
+  );
+  view.value = 'create';
+  status.value = '已填入历史提示词，可继续编辑';
+  showToast(status.value);
+}
+
+function syncLatestConversationImages() {
+  if (conversationOffset.value !== 0) {
+    images.value = [];
+    imagePaths.value = [];
+    return;
+  }
+  const latestTurn = [...conversationHistory.value]
+    .reverse()
+    .find((turn) => turn.images?.length || turn.imagePaths?.length);
+  images.value = latestTurn ? [...(latestTurn.images || [])] : [];
+  imagePaths.value = latestTurn ? [...(latestTurn.imagePaths || [])] : [];
+}
+
+async function deleteConversationRecord(turn) {
+  const turnId = String(turn?.id || '').trim();
+  if (!turnId) return;
+  try {
+    if (window.forge?.deleteConversationTurn) {
+      await window.forge.deleteConversationTurn(turnId);
+    }
+    conversationHistory.value = conversationHistory.value.filter(
+      (item) => item.id !== turnId,
+    );
+    conversationTotal.value = Math.max(0, conversationTotal.value - 1);
+    if (!conversationHistory.value.length && conversationTotal.value > 0) {
+      await loadConversationHistory(
+        Math.min(
+          conversationOffset.value,
+          Math.max(0, conversationTotal.value - conversationLimit.value),
+        ),
+      );
+    } else {
+      syncLatestConversationImages();
+    }
+    status.value = '已删除这轮对话记录，作品图片仍保留在作品库';
+    showToast(status.value);
+  } catch (error) {
+    status.value = formatUserMessage(error, '删除对话记录失败，请稍后重试');
+    showToast(status.value, 'error');
+  }
+}
+
+function useContextImageAsReference() {
+  if (!contextMenu.value?.src) return;
+  const { src, filePath } = contextMenu.value;
+  contextMenu.value = null;
+  const added = addReferenceFromImage(
+    src,
+    basenameFromPath(filePath) || `作品参考图-${Date.now()}.png`,
+  );
+  if (added) view.value = 'create';
+}
+
+async function regenerateContextImage() {
+  if (!contextMenu.value?.generationTurn) return;
+  const turn = contextMenu.value.generationTurn;
+  contextMenu.value = null;
+  view.value = 'create';
+  await regenerateFromConversation(turn);
 }
 
 async function downloadContextImage() {
@@ -731,6 +844,12 @@ onBeforeUnmount(() => {
         <WorksGallery
           :view="view"
           :conversation-history="conversationHistory"
+          :conversation-loading="conversationLoading"
+          :conversation-offset="conversationOffset"
+          :conversation-total="conversationTotal"
+          :conversation-limit="conversationLimit"
+          :conversation-has-older="conversationHasOlder"
+          :conversation-has-newer="conversationHasNewer"
           :images="images"
           :image-paths="imagePaths"
           :live-image="liveImage"
@@ -750,6 +869,11 @@ onBeforeUnmount(() => {
           :gallery-exporting="galleryExporting"
           @preview="openPreview"
           @context-menu="showImageMenu"
+          @load-older-conversations="loadOlderConversations"
+          @load-newer-conversations="loadNewerConversations"
+          @copy-prompt="copyConversationPrompt"
+          @edit-prompt="editConversationPrompt"
+          @delete-conversation="deleteConversationRecord"
           @import="importGalleryImages()"
           @import-drop="importGalleryImages"
           @toggle-selection="toggleGallerySelection"
@@ -795,6 +919,8 @@ onBeforeUnmount(() => {
       v-if="contextMenu"
       :menu="contextMenu"
       @copy="copyContextImage"
+      @reference="useContextImageAsReference"
+      @regenerate="regenerateContextImage"
       @download="downloadContextImage"
       @recognize="recognizeContextText"
       @edit="editContextImage"

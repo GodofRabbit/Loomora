@@ -217,7 +217,7 @@ function hydrateConversationTurn(turn) {
   };
 }
 
-function listConversationHistory() {
+function collectConversationTurns() {
   const records = [];
   const seen = new Set();
   for (const root of new Set(galleryRoots())) {
@@ -227,16 +227,72 @@ function listConversationHistory() {
       if (!dateDirectory.isDirectory()) continue;
       const filePath = conversationFilePath(path.join(root, dateDirectory.name));
       for (const turn of readConversationFile(filePath)) {
-        const hydrated = hydrateConversationTurn(turn);
-        if (!hydrated.id || seen.has(hydrated.id)) continue;
-        seen.add(hydrated.id);
-        records.push(hydrated);
+        const sanitized = sanitizeConversationTurn(turn);
+        if (!sanitized.id || seen.has(sanitized.id)) continue;
+        seen.add(sanitized.id);
+        records.push(sanitized);
       }
     }
   }
   return records.sort(
-    (a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0),
+    (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0),
   );
+}
+
+function listConversationHistory(options = {}) {
+  const allRecords = collectConversationTurns();
+  const limit = Math.min(50, Math.max(1, Number(options?.limit) || 10));
+  const offset = Math.min(
+    Math.max(0, Number(options?.offset) || 0),
+    Math.max(0, allRecords.length - 1),
+  );
+  const items = allRecords
+    .slice(offset, offset + limit)
+    .map(hydrateConversationTurn)
+    .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
+  return {
+    items,
+    total: allRecords.length,
+    offset,
+    limit,
+    hasMore: offset + limit < allRecords.length,
+    hasNewer: offset > 0,
+  };
+}
+
+function findConversationByImage(filePath) {
+  const target = path.resolve(filePath || '');
+  if (!isGalleryImage(target)) return null;
+  const historyPath = conversationFilePath(path.dirname(target));
+  const turns = readConversationFile(historyPath);
+  const turn = turns.find((item) =>
+    (Array.isArray(item?.imagePaths) ? item.imagePaths : []).some((itemPath) =>
+      sameFilePath(itemPath, target),
+    ),
+  );
+  return turn ? sanitizeConversationTurn(turn) : null;
+}
+
+function deleteConversationTurn(turnId) {
+  const targetId = String(turnId || '').trim();
+  if (!targetId) return { deleted: false };
+  let deleted = false;
+  for (const root of new Set(galleryRoots())) {
+    if (!fs.existsSync(root)) continue;
+    for (const dateDirectory of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!dateDirectory.isDirectory()) continue;
+      const filePath = conversationFilePath(path.join(root, dateDirectory.name));
+      const turns = readConversationFile(filePath);
+      if (!turns.length) continue;
+      const nextTurns = turns.filter(
+        (turn) => String(turn?.id || '') !== targetId,
+      );
+      if (nextTurns.length === turns.length) continue;
+      writeConversationFile(filePath, nextTurns);
+      deleted = true;
+    }
+  }
+  return { deleted };
 }
 
 function updateStoredConversationImagePath(oldPath, nextPath) {
@@ -285,7 +341,18 @@ function removeStoredConversationImagePath(filePath) {
           }
           return keep;
         });
-        return turnChanged ? { ...turn, imagePaths } : turn;
+        if (!turnChanged) return turn;
+        return {
+          ...turn,
+          imagePaths,
+          progress: {
+            ...(turn.progress || {}),
+            completed: Math.min(
+              Number(turn.progress?.completed) || imagePaths.length,
+              imagePaths.length,
+            ),
+          },
+        };
       });
       if (fileChanged) writeConversationFile(historyPath, nextTurns);
     }
@@ -521,12 +588,20 @@ function registerGalleryHandlers() {
 
   ipcMain.handle('list-gallery', async () => listGallery());
 
-  ipcMain.handle('list-conversation-history', async () =>
-    listConversationHistory(),
+  ipcMain.handle('list-conversation-history', async (_event, options) =>
+    listConversationHistory(options),
   );
 
   ipcMain.handle('save-conversation-turn', async (_event, turn) =>
     saveConversationTurn(turn),
+  );
+
+  ipcMain.handle('find-conversation-by-image', async (_event, filePath) =>
+    findConversationByImage(filePath),
+  );
+
+  ipcMain.handle('delete-conversation-turn', async (_event, turnId) =>
+    deleteConversationTurn(turnId),
   );
 
   ipcMain.handle('import-gallery-images', async (_event, filePaths) => {
