@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { formatUserMessage } from '../utils/userMessages';
 
 export function useOcr(showToast) {
   const open = ref(false);
@@ -84,8 +85,11 @@ export function useOcr(showToast) {
         .filter(Boolean);
     } catch (recognitionError) {
       if (currentRun !== runId) return;
-      console.error('PaddleOCR recognition failed', recognitionError);
-      error.value = recognitionError?.message || '文字识别失败，请稍后重试';
+      console.error('PaddleOCR 文字识别失败', recognitionError);
+      error.value = formatUserMessage(
+        recognitionError,
+        '文字识别失败，请稍后重试',
+      );
     } finally {
       running = false;
       busy.value = false;
@@ -99,7 +103,10 @@ export function useOcr(showToast) {
       await window.forge.copyText(text);
       showToast('识别文字已复制');
     } catch (copyError) {
-      showToast(copyError?.message || '复制文字失败', 'error');
+      showToast(
+        formatUserMessage(copyError, '复制文字失败，请稍后重试'),
+        'error',
+      );
     }
   }
 

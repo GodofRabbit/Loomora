@@ -78,13 +78,24 @@ function onOptionKeydown(event, option) {
   }
 }
 function closeFromOutside(event) {
-  if (!root.value?.contains(event.target)) open.value = false;
+  const path = event.composedPath?.() || [];
+  if (
+    root.value &&
+    (root.value.contains(event.target) || path.includes(root.value))
+  ) {
+    return;
+  }
+  open.value = false;
 }
 
-onMounted(() => document.addEventListener('pointerdown', closeFromOutside));
-onBeforeUnmount(() =>
-  document.removeEventListener('pointerdown', closeFromOutside),
-);
+onMounted(() => {
+  document.addEventListener('pointerdown', closeFromOutside, true);
+  document.addEventListener('focusin', closeFromOutside, true);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeFromOutside, true);
+  document.removeEventListener('focusin', closeFromOutside, true);
+});
 </script>
 
 <template>

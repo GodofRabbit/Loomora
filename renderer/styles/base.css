@@ -3,6 +3,7 @@
 }
 :root {
   --window-titlebar-height: 36px;
+  --topbar-height: 58px;
 }
 html,
 body,
@@ -21,7 +22,7 @@ body {
   height: 100vh;
   position: relative;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   background: radial-gradient(
     ellipse at 50% 16%,
     #21104b 0,
@@ -31,6 +32,18 @@ body {
   scrollbar-width: none;
 }
 .app-shell::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.content-scroll {
+  position: relative;
+  height: calc(100vh - var(--window-titlebar-height) - var(--topbar-height));
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.content-scroll::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -79,7 +92,7 @@ body {
 .custom-scrollbar {
   position: fixed;
   z-index: 90;
-  top: 8px;
+  top: calc(var(--window-titlebar-height) + var(--topbar-height) + 8px);
   right: 1px;
   bottom: 8px;
   width: 10px;
@@ -88,7 +101,7 @@ body {
   pointer-events: none;
 }
 .custom-scrollbar-thumb {
-  position: fixed;
+  position: absolute;
   right: 2px;
   width: 8px;
   min-height: 48px;

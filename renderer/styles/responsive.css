@@ -1,3 +1,29 @@
+@media (max-width: 1499px) {
+  .gallery-timeline {
+    width: 146px;
+    top: calc(var(--window-titlebar-height) + var(--topbar-height) + 76px);
+    max-height: calc(
+      100vh - var(--window-titlebar-height) - var(--topbar-height) - 112px
+    );
+    padding: 8px 2px 8px 10px;
+  }
+  .gallery-timeline button {
+    min-height: 46px;
+    padding: 7px 0 7px 34px;
+  }
+  .gallery-timeline button::before {
+    left: 5px;
+  }
+  .gallery-timeline button span {
+    color: #d0c8df;
+    font-size: 11px;
+  }
+  .gallery-timeline button b {
+    color: #8cdff0;
+    font-size: 10px;
+  }
+}
+
 @media (max-width: 1180px) {
   .topbar nav {
     gap: 34px;
@@ -5,11 +31,21 @@
   .app-shell main {
     width: calc(100vw - 32px);
   }
+  .gallery-select-button,
+  .gallery-export-button,
+  .gallery-import-button {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .gallery-drop-hint {
+    display: none;
+  }
   .control-row {
     grid-template-columns:
-      minmax(184px, 1.45fr) minmax(108px, 0.8fr) minmax(132px, 1fr)
-      minmax(100px, 0.8fr) minmax(156px, 0.9fr) minmax(150px, 1fr);
-    gap: 9px;
+      minmax(126px, 0.88fr) minmax(184px, 1.24fr) minmax(146px, 0.96fr)
+      minmax(84px, 0.58fr) minmax(136px, 0.88fr) minmax(136px, 0.86fr)
+      minmax(156px, 0.96fr);
+    gap: 8px;
   }
 }
 
@@ -19,6 +55,19 @@
   }
   .control-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .generation-actions {
+    grid-column: 1 / -1;
+  }
+  .generation-live-card {
+    grid-template-columns: 1fr;
+  }
+  .generation-chat-user-bubble,
+  .generation-chat-assistant-bubble {
+    width: calc(100% - 40px);
+  }
+  .generation-batch-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .gallery {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -32,6 +81,16 @@
   .app-shell main {
     width: calc(100vw - 32px);
   }
+  .works-head-actions {
+    gap: 8px;
+  }
+  .gallery-select-button,
+  .gallery-export-button,
+  .gallery-import-button {
+    height: 34px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
   .intro {
     padding-top: 48px;
   }
@@ -44,6 +103,13 @@
   .control-row,
   .gallery {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .generation-actions {
+    gap: 8px;
+  }
+  .generation-actions .generate,
+  .cancel {
+    min-width: 0;
   }
   .status {
     max-width: 45%;

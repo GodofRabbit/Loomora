@@ -2,35 +2,33 @@
 
 > 把灵感变成画面。Loom light into images.
 
-Loomora 是一款面向 Windows 的 AI 图片创作与管理桌面应用，基于 Electron、Vue 3 和 Vite 构建。它可以连接兼容的图片生成服务，通过文字与参考图生成作品，并在本地完成作品管理、图片编辑、马赛克处理和 OCR 文字识别。
+Loomora 是一款面向 Windows 的 AI 图片创作与管理桌面应用，基于 Electron、Vue 3 和 Vite 构建。它默认通过 OpenAI 官方图片生成接口生成作品，也支持切换到兼容 OpenAI 协议的服务地址，并在本地完成作品管理、图片编辑、马赛克处理和 OCR 文字识别。
 
 ## 功能概览
 
 ### AI 图片生成
 
-- 支持最长 800 字的中文或英文提示词。
-- 支持 `1:1`、`16:9`、`9:16`、`4:3`、`3:4`、`3:2` 六种画面比例。
-- 可配置模型、分辨率和生成质量。
-- 单次可连续生成多张图片；抽卡上限会随当前模型联动，并显示请求与任务处理状态。
-- 支持同步返回图片和异步任务轮询；生成结果会自动保存到本地。
-- 参考图支持文件选择或通过 `Ctrl+V` 从剪贴板直接添加，可点击大图预览，并根据当前模型自动限制数量。
-
-当前内置的模型兼容规则如下：
-
-| 模型                       | 参考图上限 | 抽卡上限 | 质量选项                        |
-| -------------------------- | ---------: | -------: | ------------------------------- |
-| `gpt-image-2`              |      14 张 |    14 张 | `auto`、`low`、`medium`、`high` |
-| `gemini-*`                 |       4 张 |     4 张 | `1K`、`2K`、`4K`                |
-| `grok-imagine-image-edit`  |       3 张 |     3 张 | 由服务端处理                    |
-| `grok-imagine-image-lite`  |     不支持 |     1 张 | 由服务端处理                    |
-| 其他 `grok-imagine-image*` |       1 张 |     1 张 | 由服务端处理                    |
+- 支持最长 4000 字的中文或英文提示词。
+- 支持 `1:1`、`16:9`、`9:16`、`4:3`、`3:4`、`3:2`、`2:3` 等常用画面比例。
+- 分辨率提供按比例自动、常用基础尺寸、`16:9（2K）`、`9:16（2K）`、`16:9（4K）`、`9:16（4K）` 等选项。
+- 支持选择官方输出格式 `PNG`、`JPEG` 和 `WEBP`，默认使用 `PNG`。
+- 基于 OpenAI 官方 `gpt-image-2`，生成过程支持流式预览。
+- 创作页采用聊天式历史记录，每一次生成都会保留为一轮对话，可向上回看提示词、生成参数、进度、结果图和保存位置。
+- 创作对话会按日期保存到作品目录，每个 `Gallery/YYYY-MM-DD/` 下会维护一个当天的 `conversations.json`。
+- 接口地址默认是 `https://api.openai.com`，可改为兼容 OpenAI 协议的第三方服务。
+- 单次可连续生成多张图片，OpenAI 官方模型当前在应用内限制最多 10 张。
+- 单张生成走流式预览，批量生成走一次性返回的 `n` 请求，结果都会自动保存到本地。
+- 参考图支持文件选择或通过 `Ctrl+V` 从剪贴板直接添加，可点击大图预览。
 
 ### 本地作品库
 
-- 生成的图片按日期保存到 `Gallery/YYYY-MM-DD/`。
+- 生成的图片按日期保存到 `Gallery/YYYY-MM-DD/`，当天的创作对话保存到同目录下的 `conversations.json`。
 - 作品库按原图比例采用瀑布流排版，并优先展示最新作品。
+- 可点击“导入图片”或直接拖拽图片到作品库区域导入本地图片。
+- 作品库左侧提供浮动日期时间线，按“全部”或某一天筛选，日期节点会显示对应作品数量。
+- 作品库支持批量导出全部、当前日期或勾选图片，导出时会自动创建文件夹。
 - 点击图片可进入大图预览，并在多图间切换。
-- 右键菜单支持复制、下载、识别文字、编辑、打开文件所在位置和删除。
+- 右键菜单支持复制、下载、识别文字、编辑、重命名、打开文件所在位置和删除。
 - 下载时使用系统“另存为”窗口选择保存位置，完成后显示提示。
 - 删除本地作品前会弹出二次确认。
 
@@ -62,10 +60,10 @@ Loomora 集成 Paddle.js OCR，可从以下入口识别图片文字：
 
 点击顶部导航右侧的齿轮图标即可打开设置弹窗：
 
-- 网站地址默认是 `https://www.zexitongxue.com`。
+- 接口地址默认填充 `https://api.openai.com`。
 - API Key 默认留空。
-- 点击“保存配置”后，网站地址和 API Key 会保存到 `localStorage`，下次启动自动恢复。
-- 点击取消、遮罩或按 `Esc` 会放弃本次修改。
+- 点击“保存配置”后，接口地址和 API Key 会保存到 `localStorage`，下次启动自动恢复。
+- 点击取消、关闭按钮或按 `Esc` 会放弃本次修改；点击遮罩不会关闭弹窗。
 
 注意：API Key 以明文形式存储在应用渲染进程的 `localStorage` 中，请仅在可信设备上使用。
 
@@ -124,20 +122,20 @@ npm run format:check
 
 ## 使用流程
 
-1. 点击顶部右侧齿轮，在设置弹窗中填写网站地址和 API Key，然后保存配置。
-2. 输入提示词，根据需要选择模型、比例、分辨率、质量和生成数量。
+1. 点击顶部右侧齿轮，在设置弹窗中确认接口地址并填写 API Key，然后保存配置。
+2. 输入提示词，根据需要选择比例、分辨率、质量和生成数量。
 3. 可选添加参考图，并点击缩略图确认大图内容。
-4. 点击“生成”，等待任务完成；生成结果会展示在当前页面并保存到本地作品库。
-5. 打开“作品库”预览、下载、编辑、识别或删除已经保存的作品。
+4. 点击“生成”。单张会显示流式预览，批量会显示抽卡队列，生成结果会以聊天记录形式保留在创作页，并保存到本地作品库。
+5. 打开“作品库”后可通过左侧时间线按日期筛选，通过“导出全部 / 导出当前 / 导出已选”批量导出为文件夹。
+6. 作品库可点击“导入图片”导入本地图片，也支持把图片直接拖拽到作品库区域导入。
 
 ## API 约定
 
-Loomora 当前向配置网站的源地址发送以下请求：
+Loomora 会向设置中的 OpenAI 兼容接口地址发送以下请求。默认地址是 `https://api.openai.com`：
 
 ```text
-POST /v1/images/generations/async
-GET  /v1/images/tasks/{task_id}
-GET  /v1/images/tasks/{task_id}/content?index={index}
+POST /v1/images/generations
+POST /v1/images/edits
 ```
 
 生成请求使用 Bearer Token：
@@ -155,14 +153,25 @@ Content-Type: application/json
   "prompt": "画面描述",
   "size": "2048x1152",
   "quality": "auto",
-  "n": 1,
-  "image_url": "data:image/png;base64,..."
+  "output_format": "png",
+  "stream": true,
+  "partial_images": 2
 }
 ```
 
-没有参考图时不会发送 `image_url`。多张参考图会将该字段设置为数组。接口既可以直接返回图片，也可以返回 `task_id` 供应用轮询；轮询间隔为 3 秒，最多 200 次。
+没有参考图时使用 `POST /v1/images/generations`；有参考图时改用 `POST /v1/images/edits`，并把参考图作为 multipart 表单上传。流式响应会返回 partial image 事件，完成后返回最终图片。
 
-接口文档：[zexitongxue.com/docs/image-api.html](https://zexitongxue.com/docs/image-api.html)
+当生成数量大于 1 时，请求会使用非流式模式并带上 `n` 参数；单张生成保持流式预览。
+
+参考图按官方编辑接口的 multipart 方式传入，字段名是 `image[]`，当前最多支持 16 张。
+
+`gpt-image-2` 的尺寸会按 OpenAI 官方约束校验：宽高不小于 1024、宽高为 16 的倍数、宽高比小于 3:1、总像素不超过 16,777,216。OpenAI 文档列出的热门尺寸包括 `2048x1152`、`3840x2160` 和 `2160x3840`。
+
+官方文档：
+
+- https://developers.openai.com/api/docs/guides/image-generation
+- https://developers.openai.com/api/reference/resources/images/generation-streaming-events
+- https://developers.openai.com/api/reference/resources/images/edit-streaming-events
 
 ## 技术栈
 
@@ -183,7 +192,7 @@ Electron 主进程负责窗口生命周期，并将图片生成和图库文件�
 Loomora/
 ├── electron/
 │   ├── gallery.js                  # 图库文件、系统对话框与相关 IPC
-│   └── generation.js               # 图片生成请求与异步任务轮询
+│   └── generation.js               # OpenAI 图片生成请求与流式事件
 ├── main.js                         # Electron 窗口生命周期
 ├── preload.js                      # 安全的渲染进程能力桥接
 ├── package.json                    # 项目依赖、脚本和打包配置

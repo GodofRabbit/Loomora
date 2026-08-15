@@ -1,10 +1,11 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppHeader from './components/AppHeader.vue';
 import CreationPanel from './components/CreationPanel.vue';
 import ImageContextMenu from './components/ImageContextMenu.vue';
 import ImageEditorModal from './components/ImageEditorModal.vue';
 import ImageLightbox from './components/ImageLightbox.vue';
+import RenameModal from './components/RenameModal.vue';
 import OcrDrawer from './components/OcrDrawer.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import ToastMessage from './components/ToastMessage.vue';
@@ -13,6 +14,7 @@ import { useGenerationForm } from './composables/useGenerationForm';
 import { useImageEditor } from './composables/useImageEditor';
 import { useOcr } from './composables/useOcr';
 import { distributeGalleryItems, sortGalleryItems } from './utils/gallery';
+import { formatUserMessage } from './utils/userMessages';
 
 const view = ref('create');
 const status = ref('');
@@ -22,8 +24,13 @@ const gallery = ref([]);
 const galleryLoading = ref(false);
 const galleryImporting = ref(false);
 const galleryColumnCount = ref(4);
+const activeGalleryDate = ref('all');
+const gallerySelectionMode = ref(false);
+const selectedGalleryPaths = ref([]);
+const galleryExporting = ref(false);
 const preview = ref(null);
 const contextMenu = ref(null);
+const renameModal = ref(null);
 const scrollContainer = ref(null);
 const scrollThumbTop = ref(0);
 const scrollThumbHeight = ref(80);
@@ -31,7 +38,7 @@ const scrollbarVisible = ref(false);
 const editorModal = ref(null);
 let toastTimer;
 let scrollResizeObserver;
-let stopGenerationStatus;
+let stopGenerationUpdate;
 
 function showToast(message, type = 'success') {
   clearTimeout(toastTimer);
@@ -47,12 +54,18 @@ const {
   ratio,
   count,
   reference,
+  conversationHistory,
   images,
   imagePaths,
+  liveImage,
+  liveMessage,
+  generationMode,
+  generationProgress,
   busy,
   model,
   resolution,
   quality,
+  outputFormat,
   settingsEndpoint,
   settingsApiKey,
   modelIsGpt,
@@ -60,20 +73,45 @@ const {
   ratioOptions,
   resolutionOptions,
   qualityOptions,
+  outputFormatOptions,
   maxReferences,
   maxCount,
   promptLimit,
   counter,
   modelOptions,
+  applyGenerationUpdate,
+  loadConversationHistory,
+  syncConversationImagePaths,
+  removeConversationImagePath,
 } = form;
 
 const ocr = useOcr(showToast);
 const currentPreview = computed(
   () => preview.value?.items[preview.value.index],
 );
-const galleryColumns = computed(() =>
-  distributeGalleryItems(gallery.value, galleryColumnCount.value),
+const galleryDateOptions = computed(() => {
+  const counts = new Map();
+  gallery.value.forEach((item) => {
+    const date = String(item.date || '').trim();
+    if (!date) return;
+    counts.set(date, (counts.get(date) || 0) + 1);
+  });
+  return Array.from(counts, ([date, count]) => ({ date, count })).sort((a, b) =>
+    b.date.localeCompare(a.date),
+  );
+});
+const filteredGallery = computed(() =>
+  activeGalleryDate.value === 'all'
+    ? gallery.value
+    : gallery.value.filter((item) => item.date === activeGalleryDate.value),
 );
+const galleryColumns = computed(() =>
+  distributeGalleryItems(filteredGallery.value, galleryColumnCount.value),
+);
+const selectedGalleryItems = computed(() =>
+  gallery.value.filter((item) => selectedGalleryPaths.value.includes(item.path)),
+);
+const selectedGalleryCount = computed(() => selectedGalleryItems.value.length);
 
 function closePreview() {
   preview.value = null;
@@ -140,7 +178,7 @@ function updateGalleryColumnCount() {
 }
 
 function galleryPreviewItems() {
-  return gallery.value.map((item) => ({
+  return filteredGallery.value.map((item) => ({
     src: item.data,
     name: item.name,
     filePath: item.path,
@@ -156,12 +194,129 @@ function generatedPreviewItems() {
   }));
 }
 
+function conversationPreviewItems(turn) {
+  return (turn?.images || []).map((source, index) => ({
+    src: source,
+    name: `生成图片 ${index + 1}`,
+    filePath: turn.imagePaths?.[index],
+  }));
+}
+
+function clearGallerySelection() {
+  gallerySelectionMode.value = false;
+  selectedGalleryPaths.value = [];
+}
+
+function pruneGallerySelection() {
+  selectedGalleryPaths.value = selectedGalleryPaths.value.filter((filePath) =>
+    gallery.value.some((item) => item.path === filePath),
+  );
+}
+
+function toggleGallerySelectionMode() {
+  if (gallerySelectionMode.value) {
+    clearGallerySelection();
+  } else {
+    gallerySelectionMode.value = true;
+  }
+}
+
+function toggleGallerySelection(item) {
+  const filePath = item?.path;
+  if (!filePath) return;
+  if (!gallerySelectionMode.value) gallerySelectionMode.value = true;
+  if (selectedGalleryPaths.value.includes(filePath)) {
+    selectedGalleryPaths.value = selectedGalleryPaths.value.filter(
+      (path) => path !== filePath,
+    );
+    return;
+  }
+  selectedGalleryPaths.value = [...selectedGalleryPaths.value, filePath];
+}
+
+function selectedGalleryExportItems() {
+  return selectedGalleryItems.value.map((item) => ({
+    path: item.path,
+    name: item.name,
+    date: item.date,
+  }));
+}
+
+async function exportGalleryImages(scope) {
+  if (galleryLoading.value || galleryImporting.value || galleryExporting.value) {
+    return;
+  }
+  const items =
+    scope === 'selected'
+      ? selectedGalleryExportItems()
+      : filteredGallery.value.map((item) => ({
+          path: item.path,
+          name: item.name,
+          date: item.date,
+        }));
+  if (!items.length) {
+    status.value =
+      scope === 'selected'
+        ? '请先勾选要导出的图片'
+        : '当前没有可导出的图片';
+    showToast(status.value, 'error');
+    return;
+  }
+  galleryExporting.value = true;
+  try {
+    const result = await window.forge.exportGalleryImages({
+      items,
+      scope,
+      date: activeGalleryDate.value,
+    });
+    if (result.canceled) return;
+    if (result.exported > 0) {
+      const detail = result.folder ? `，已保存到 ${result.folder}` : '';
+      const exportLabel =
+        scope === 'selected'
+          ? '勾选图片'
+          : activeGalleryDate.value === 'all'
+            ? '全部作品'
+            : '当前日期作品';
+      status.value =
+        scope === 'selected'
+          ? `已导出 ${result.exported} 张${exportLabel}${detail}`
+          : `已导出 ${result.exported} 张${exportLabel}${detail}`;
+      if (result.failed?.length) {
+        status.value += `，${result.failed.length} 张失败`;
+      }
+      showToast(status.value, result.failed?.length ? 'error' : 'success');
+      clearGallerySelection();
+    } else if (result.failed?.length) {
+      status.value = `导出失败：${result.failed[0].error}`;
+      showToast(status.value, 'error');
+    } else {
+      status.value = '没有可导出的图片';
+      showToast(status.value, 'error');
+    }
+  } catch (error) {
+    status.value = formatUserMessage(error, '批量导出失败，请稍后重试');
+    showToast(status.value, 'error');
+  } finally {
+    galleryExporting.value = false;
+  }
+}
+
 function openPreview({ type, index = 0, item }) {
   if (type === 'gallery') {
+    const galleryIndex = filteredGallery.value.indexOf(item);
+    if (galleryIndex < 0) return;
     preview.value = {
       items: galleryPreviewItems(),
-      index: gallery.value.indexOf(item),
+      index: galleryIndex,
     };
+    return;
+  }
+  if (type === 'conversation') {
+    const turn = conversationHistory.value.find((entry) => entry.id === item);
+    const items = conversationPreviewItems(turn);
+    if (!items.length) return;
+    preview.value = { items, index };
     return;
   }
   preview.value = { items: generatedPreviewItems(), index };
@@ -175,6 +330,38 @@ function openReferencePreview(index) {
     })),
     index,
   };
+}
+
+function basenameFromPath(filePath) {
+  return String(filePath || '').split(/[\\/]/).pop() || '';
+}
+
+function syncRenamedImage(oldPath, nextItem) {
+  gallery.value = sortGalleryItems(
+    gallery.value.map((item) => (item.path === oldPath ? nextItem : item)),
+  );
+  imagePaths.value = imagePaths.value.map((itemPath) =>
+    itemPath === oldPath ? nextItem.path : itemPath,
+  );
+  syncConversationImagePaths(oldPath, nextItem.path);
+  selectedGalleryPaths.value = selectedGalleryPaths.value.map((itemPath) =>
+    itemPath === oldPath ? nextItem.path : itemPath,
+  );
+  if (preview.value?.items?.length) {
+    preview.value = {
+      ...preview.value,
+      items: preview.value.items.map((item) =>
+        item.filePath === oldPath
+          ? {
+              ...item,
+              src: nextItem.data || item.src,
+              name: nextItem.name || item.name,
+              filePath: nextItem.path,
+            }
+          : item,
+      ),
+    };
+  }
 }
 
 function movePreview(step) {
@@ -201,7 +388,7 @@ async function copyContextImage() {
     await window.forge.copyImage(contextMenu.value.src);
     status.value = '图片已复制';
   } catch (error) {
-    status.value = error?.message || '复制图片失败';
+    status.value = formatUserMessage(error, '复制图片失败，请稍后重试');
   } finally {
     contextMenu.value = null;
   }
@@ -219,7 +406,7 @@ async function downloadContextImage() {
       showToast(`下载完成：${result.path}`);
     }
   } catch (error) {
-    status.value = error?.message || '图片下载失败';
+    status.value = formatUserMessage(error, '图片下载失败，请稍后重试');
     showToast(status.value, 'error');
   }
 }
@@ -235,12 +422,21 @@ function editContextImage() {
   if (!contextMenu.value?.editable) return;
   const item = {
     src: contextMenu.value.src,
-    name: contextMenu.value.filePath.split(/[\\/]/).pop(),
+    name: basenameFromPath(contextMenu.value.filePath),
     filePath: contextMenu.value.filePath,
     editable: true,
   };
   contextMenu.value = null;
   editor.openEditor(item);
+}
+
+function renameContextImage() {
+  if (!contextMenu.value?.filePath) return;
+  renameModal.value = {
+    filePath: contextMenu.value.filePath,
+    name: basenameFromPath(contextMenu.value.filePath),
+  };
+  contextMenu.value = null;
 }
 
 async function showContextImageInFolder() {
@@ -250,7 +446,7 @@ async function showContextImageInFolder() {
   try {
     await window.forge.showImageInFolder(filePath);
   } catch (error) {
-    status.value = error?.message || '无法打开文件所在位置';
+    status.value = formatUserMessage(error, '无法打开文件所在位置，请稍后重试');
   }
 }
 
@@ -267,15 +463,59 @@ async function deleteContextImage() {
       images.value.splice(generatedIndex, 1);
     }
     gallery.value = gallery.value.filter((item) => item.path !== filePath);
+    selectedGalleryPaths.value = selectedGalleryPaths.value.filter(
+      (itemPath) => itemPath !== filePath,
+    );
+    removeConversationImagePath(filePath);
     closePreview();
     status.value = '图片已删除';
   } catch (error) {
-    status.value = error?.message || '删除图片失败';
+    status.value = formatUserMessage(error, '删除图片失败，请稍后重试');
+  }
+}
+
+async function saveRenameImage(nameDraft) {
+  if (!renameModal.value?.filePath) return;
+  const filePath = renameModal.value.filePath;
+  const nextName = String(nameDraft || '').trim();
+  if (!nextName) {
+    status.value = '请输入新的文件名';
+    showToast(status.value, 'error');
+    return;
+  }
+  try {
+    if (!window.forge?.renameImage) {
+      status.value = '重命名服务不可用，请重启 Loomora';
+      showToast(status.value, 'error');
+      return;
+    }
+    const result = await window.forge.renameImage({
+      filePath,
+      name: nextName,
+    });
+    if (result?.error) {
+      status.value = result.error;
+      showToast(status.value, 'error');
+      return;
+    }
+    if (result?.renamed) {
+      syncRenamedImage(filePath, result.item);
+      status.value = '图片已重命名';
+      showToast(status.value);
+    } else {
+      status.value = result?.message || '文件名未变更';
+      showToast(status.value);
+    }
+    renameModal.value = null;
+  } catch (error) {
+    status.value = formatUserMessage(error, '重命名失败，请检查文件名后重试');
+    showToast(status.value, 'error');
   }
 }
 
 async function openGallery() {
   view.value = 'gallery';
+  clearGallerySelection();
   if (galleryLoading.value) return;
   galleryLoading.value = true;
   scrollbarVisible.value = false;
@@ -285,7 +525,7 @@ async function openGallery() {
     gallery.value = sortGalleryItems(await window.forge.listGallery());
   } catch (error) {
     gallery.value = [];
-    status.value = error?.message || '作品库加载失败';
+    status.value = formatUserMessage(error, '作品库加载失败，请稍后重试');
     showToast(status.value, 'error');
   } finally {
     galleryLoading.value = false;
@@ -315,7 +555,7 @@ async function importGalleryImages(files) {
     }
     nextTick(updateScrollbar);
   } catch (error) {
-    status.value = error?.message || '图片导入失败';
+    status.value = formatUserMessage(error, '图片导入失败，请稍后重试');
     showToast(status.value, 'error');
   } finally {
     galleryImporting.value = false;
@@ -350,9 +590,11 @@ function onPaste(event) {
 
 function onKeydown(event) {
   if (event.key === 'Escape') {
-    if (settingsOpen.value) settingsOpen.value = false;
+    if (renameModal.value) renameModal.value = null;
+    else if (settingsOpen.value) settingsOpen.value = false;
     else if (ocr.open.value) ocr.close();
     else if (editor.open.value) editor.close();
+    else if (gallerySelectionMode.value) clearGallerySelection();
     else {
       contextMenu.value = null;
       closePreview();
@@ -373,10 +615,31 @@ onMounted(() => {
   scrollResizeObserver = new ResizeObserver(updateScrollbar);
   scrollResizeObserver.observe(scrollContainer.value);
   scrollResizeObserver.observe(scrollContainer.value.querySelector('main'));
-  stopGenerationStatus = window.forge?.onGenerationStatus?.((message) => {
-    status.value = message;
+  stopGenerationUpdate = window.forge?.onGenerationUpdate?.((update) => {
+    applyGenerationUpdate(update);
   });
+  loadConversationHistory();
   nextTick(updateScrollbar);
+});
+
+watch(galleryDateOptions, (options) => {
+  if (
+    activeGalleryDate.value !== 'all' &&
+    !options.some((option) => option.date === activeGalleryDate.value)
+  ) {
+    activeGalleryDate.value = 'all';
+  }
+});
+
+watch(gallery, pruneGallerySelection);
+
+watch(activeGalleryDate, () => {
+  clearGallerySelection();
+  if (preview.value) closePreview();
+});
+
+watch(view, (nextView) => {
+  if (nextView !== 'gallery') clearGallerySelection();
 });
 
 onBeforeUnmount(() => {
@@ -386,19 +649,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', editor.updateOverlay);
   window.removeEventListener('resize', updateGalleryColumnCount);
   scrollResizeObserver?.disconnect();
-  stopGenerationStatus?.();
+  stopGenerationUpdate?.();
   editor.destroy();
   clearTimeout(toastTimer);
 });
 </script>
 
 <template>
-  <div
-    ref="scrollContainer"
-    class="app-shell"
-    @scroll="updateScrollbar"
-    @click="contextMenu = null"
-  >
+  <div class="app-shell" @click="contextMenu = null">
     <div class="window-titlebar" aria-hidden="true"></div>
     <AppHeader
       :active-view="view"
@@ -406,49 +664,111 @@ onBeforeUnmount(() => {
       @gallery="openGallery"
       @settings="openSettings"
     />
-    <main>
-      <CreationPanel
-        v-if="view === 'create'"
-        v-model:prompt="prompt"
-        v-model:model="model"
-        v-model:ratio="ratio"
-        v-model:resolution="resolution"
-        v-model:quality="quality"
-        v-model:count="count"
-        :reference="reference"
-        :counter="counter"
-        :prompt-limit="promptLimit"
-        :model-options="modelOptions"
-        :ratio-options="ratioOptions"
-        :resolution-options="resolutionOptions"
-        :quality-options="qualityOptions"
-        :max-references="maxReferences"
-        :max-count="maxCount"
-        :model-is-gpt="modelIsGpt"
-        :model-is-gemini="modelIsGemini"
-        :busy="busy"
-        @pick-reference="form.pickReference"
-        @remove-reference="form.removeReference"
-        @preview-reference="openReferencePreview"
-        @generate="form.generate"
+    <div
+      ref="scrollContainer"
+      class="content-scroll"
+      @scroll="updateScrollbar"
+    >
+      <nav
+        v-if="view === 'gallery' && gallery.length"
+        class="gallery-timeline"
+        aria-label="按日期筛选作品库"
       >
-        <template #status>{{ status || '准备就绪' }}</template>
-      </CreationPanel>
-      <WorksGallery
-        :view="view"
-        :images="images"
-        :image-paths="imagePaths"
-        :gallery="gallery"
-        :gallery-columns="galleryColumns"
-        :gallery-column-count="galleryColumnCount"
-        :gallery-loading="galleryLoading"
-        :gallery-importing="galleryImporting"
-        @preview="openPreview"
-        @context-menu="showImageMenu"
-        @import="importGalleryImages()"
-        @import-drop="importGalleryImages"
-      />
-    </main>
+        <button
+          type="button"
+          :class="{ active: activeGalleryDate === 'all' }"
+          :aria-pressed="activeGalleryDate === 'all'"
+          :title="`全部作品：${gallery.length} 张`"
+          @click="activeGalleryDate = 'all'"
+        >
+          <span>全部</span>
+          <b>{{ gallery.length }} 张</b>
+        </button>
+        <button
+          v-for="option in galleryDateOptions"
+          :key="option.date"
+          type="button"
+          :class="{ active: activeGalleryDate === option.date }"
+          :aria-pressed="activeGalleryDate === option.date"
+          :title="`${option.date}：${option.count} 张`"
+          @click="activeGalleryDate = option.date"
+        >
+          <span>{{ option.date }}</span>
+          <b>{{ option.count }} 张</b>
+        </button>
+      </nav>
+      <main>
+        <CreationPanel
+          v-if="view === 'create'"
+          v-model:prompt="prompt"
+          v-model:model="model"
+          v-model:ratio="ratio"
+          v-model:resolution="resolution"
+          v-model:quality="quality"
+          v-model:output-format="outputFormat"
+          v-model:count="count"
+          :reference="reference"
+          :counter="counter"
+          :prompt-limit="promptLimit"
+          :model-options="modelOptions"
+          :ratio-options="ratioOptions"
+          :resolution-options="resolutionOptions"
+          :quality-options="qualityOptions"
+          :output-format-options="outputFormatOptions"
+          :max-references="maxReferences"
+          :max-count="maxCount"
+          :model-is-gpt="modelIsGpt"
+          :model-is-gemini="modelIsGemini"
+          :busy="busy"
+          @pick-reference="form.pickReference"
+          @remove-reference="form.removeReference"
+          @preview-reference="openReferencePreview"
+          @generate="form.generate"
+          @cancel="form.cancelGeneration"
+        >
+          <template #status>{{ status || '准备就绪' }}</template>
+        </CreationPanel>
+        <WorksGallery
+          :view="view"
+          :conversation-history="conversationHistory"
+          :images="images"
+          :image-paths="imagePaths"
+          :live-image="liveImage"
+          :live-message="liveMessage"
+          :generation-mode="generationMode"
+          :live-progress="generationProgress"
+          :live-active="busy"
+          :gallery="filteredGallery"
+          :gallery-columns="galleryColumns"
+          :gallery-column-count="galleryColumnCount"
+          :gallery-loading="galleryLoading"
+          :gallery-importing="galleryImporting"
+          :gallery-filter-date="activeGalleryDate"
+          :gallery-selection-mode="gallerySelectionMode"
+          :gallery-selected-paths="selectedGalleryPaths"
+          :gallery-selected-count="selectedGalleryCount"
+          :gallery-exporting="galleryExporting"
+          @preview="openPreview"
+          @context-menu="showImageMenu"
+          @import="importGalleryImages()"
+          @import-drop="importGalleryImages"
+          @toggle-selection="toggleGallerySelection"
+          @toggle-selection-mode="toggleGallerySelectionMode"
+          @export-current="exportGalleryImages('current')"
+          @export-selected="exportGalleryImages('selected')"
+        />
+      </main>
+      <div v-show="scrollbarVisible" class="custom-scrollbar" aria-hidden="true">
+        <div
+          class="custom-scrollbar-thumb"
+          :style="{
+            height: scrollThumbHeight + 'px',
+            top: scrollThumbTop + 'px',
+          }"
+          @pointerdown.prevent="startScrollDrag"
+        ></div>
+      </div>
+    </div>
     <ImageLightbox
       v-if="preview && currentPreview"
       :preview="preview"
@@ -478,8 +798,15 @@ onBeforeUnmount(() => {
       @download="downloadContextImage"
       @recognize="recognizeContextText"
       @edit="editContextImage"
+      @rename="renameContextImage"
       @show-folder="showContextImageInFolder"
       @delete="deleteContextImage"
+    />
+    <RenameModal
+      :open="Boolean(renameModal)"
+      :name="renameModal?.name || ''"
+      @close="renameModal = null"
+      @save="saveRenameImage"
     />
     <OcrDrawer
       :open="ocr.open.value"
@@ -498,15 +825,5 @@ onBeforeUnmount(() => {
       @save="saveSettings"
     />
     <ToastMessage v-if="toast" :toast="toast" @close="toast = null" />
-    <div v-show="scrollbarVisible" class="custom-scrollbar" aria-hidden="true">
-      <div
-        class="custom-scrollbar-thumb"
-        :style="{
-          height: scrollThumbHeight + 'px',
-          top: scrollThumbTop + 'px',
-        }"
-        @pointerdown.prevent="startScrollDrag"
-      ></div>
-    </div>
   </div>
 </template>

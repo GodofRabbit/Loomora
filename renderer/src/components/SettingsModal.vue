@@ -33,8 +33,9 @@ watch(
         @click.stop
       >
         <header>
-          <div><b>接口设置</b><span>配置图片生成服务</span></div>
+          <div><b>接口设置</b><span>配置 OpenAI 兼容接口</span></div>
           <button
+            type="button"
             title="关闭设置"
             aria-label="关闭设置"
             @click="$emit('close')"
@@ -44,8 +45,10 @@ watch(
         </header>
         <div class="settings-modal-body">
           <label
-            ><span>网站地址</span
-            ><input v-model="endpointDraft" placeholder="API 地址"
+            ><span>接口地址</span
+            ><input
+              v-model="endpointDraft"
+              placeholder="https://api.openai.com"
           /></label>
           <label>
             <span>API Key</span>
@@ -86,8 +89,15 @@ watch(
           </label>
         </div>
         <footer>
-          <button class="settings-cancel" @click="$emit('close')">取消</button>
           <button
+            type="button"
+            class="settings-cancel"
+            @click="$emit('close')"
+          >
+            取消
+          </button>
+          <button
+            type="button"
             class="settings-save"
             @click="$emit('save', endpointDraft, apiKeyDraft)"
           >

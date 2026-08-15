@@ -12,7 +12,6 @@ defineEmits(['close', 'previous', 'next', 'recognize', 'edit', 'context-menu']);
     class="lightbox"
     role="dialog"
     aria-modal="true"
-    @click.self="$emit('close')"
   >
     <div class="lightbox-actions">
       <button

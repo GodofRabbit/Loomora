@@ -2,12 +2,17 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('forge', {
   pickImage: () => ipcRenderer.invoke('pick-image'),
   generate: (p) => ipcRenderer.invoke('generate', p),
-  onGenerationStatus: (callback) => {
-    const listener = (_event, message) => callback(message);
-    ipcRenderer.on('generation-status', listener);
-    return () => ipcRenderer.removeListener('generation-status', listener);
+  cancelGenerate: () => ipcRenderer.invoke('cancel-generate'),
+  onGenerationUpdate: (callback) => {
+    const listener = (_event, update) => callback(update);
+    ipcRenderer.on('generation-update', listener);
+    return () => ipcRenderer.removeListener('generation-update', listener);
   },
   listGallery: () => ipcRenderer.invoke('list-gallery'),
+  listConversationHistory: () =>
+    ipcRenderer.invoke('list-conversation-history'),
+  saveConversationTurn: (turn) =>
+    ipcRenderer.invoke('save-conversation-turn', turn),
   importGalleryImages: (files) => {
     const filePaths = files
       ? Array.from(files, (file) => webUtils.getPathForFile(file)).filter(
@@ -16,6 +21,8 @@ contextBridge.exposeInMainWorld('forge', {
       : null;
     return ipcRenderer.invoke('import-gallery-images', filePaths);
   },
+  exportGalleryImages: (payload) =>
+    ipcRenderer.invoke('export-gallery-images', payload),
   saveEditedImage: (payload) =>
     ipcRenderer.invoke('save-edited-image', payload),
   downloadImage: (payload) => ipcRenderer.invoke('download-image', payload),
@@ -24,6 +31,7 @@ contextBridge.exposeInMainWorld('forge', {
   readOcrModel: (relativePath) =>
     ipcRenderer.invoke('read-ocr-model', relativePath),
   deleteImage: (filePath) => ipcRenderer.invoke('delete-image', filePath),
+  renameImage: (payload) => ipcRenderer.invoke('rename-image', payload),
   showImageInFolder: (filePath) =>
     ipcRenderer.invoke('show-image-in-folder', filePath),
 });

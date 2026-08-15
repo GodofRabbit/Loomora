@@ -18,6 +18,7 @@ defineEmits(['create', 'gallery', 'settings']);
       <a>灵感广场</a>
     </nav>
     <button
+      type="button"
       class="config-btn"
       title="打开接口设置"
       aria-label="打开接口设置"

@@ -11,7 +11,7 @@ defineEmits(['close', 'copy']);
 
 <template>
   <Transition name="ocr-drawer">
-    <div v-if="open" class="ocr-drawer-layer" @click.self="$emit('close')">
+    <div v-if="open" class="ocr-drawer-layer">
       <aside
         class="ocr-result-panel"
         role="dialog"

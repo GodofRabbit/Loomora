@@ -1,5 +1,6 @@
 import { nextTick, ref } from 'vue';
 import { editorLocale } from '../config/editorLocale';
+import { formatUserMessage } from '../utils/userMessages';
 
 const BLEND_MODE_LABELS = {
   add: '线性减淡',
@@ -212,7 +213,7 @@ export function useImageEditor({
     try {
       await applyStroke();
     } catch (error) {
-      message.value = error?.message || '马赛克处理失败';
+      message.value = formatUserMessage(error, '马赛克处理失败，请稍后重试');
       mosaicPoints = [];
       clearOverlay();
     }
@@ -421,7 +422,7 @@ export function useImageEditor({
       mountMosaicTools();
       updateOverlay();
     } catch (error) {
-      status.value = error?.message || '图片编辑器加载失败';
+      status.value = formatUserMessage(error, '图片编辑器加载失败，请稍后重试');
       close(true);
     }
   }
@@ -462,7 +463,7 @@ export function useImageEditor({
       showToast(`保存完成：${result.path}`);
       close(true);
     } catch (error) {
-      message.value = error?.message || '保存编辑图片失败';
+      message.value = formatUserMessage(error, '保存编辑图片失败，请稍后重试');
     } finally {
       saving.value = false;
     }

@@ -1,6 +1,14 @@
 <script setup>
 defineProps({ menu: { type: Object, required: true } });
-defineEmits(['copy', 'download', 'recognize', 'edit', 'show-folder', 'delete']);
+defineEmits([
+  'copy',
+  'download',
+  'recognize',
+  'edit',
+  'rename',
+  'show-folder',
+  'delete',
+]);
 </script>
 
 <template>
@@ -14,6 +22,9 @@ defineEmits(['copy', 'download', 'recognize', 'edit', 'show-folder', 'delete']);
     <button @click="$emit('recognize')"><span>文</span>识别文字</button>
     <button v-if="menu.editable" @click="$emit('edit')">
       <span>✎</span>编辑
+    </button>
+    <button v-if="menu.filePath" @click="$emit('rename')">
+      <span>Aa</span>重命名
     </button>
     <button v-if="menu.filePath" @click="$emit('show-folder')">
       <span>↗</span>打开文件所在位置

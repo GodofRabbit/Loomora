@@ -8,12 +8,14 @@ defineProps({
   ratio: { type: String, required: true },
   resolution: { type: String, required: true },
   quality: { type: String, required: true },
+  outputFormat: { type: String, required: true },
   counter: { type: String, required: true },
   promptLimit: { type: Number, required: true },
   modelOptions: { type: Array, required: true },
   ratioOptions: { type: Array, required: true },
   resolutionOptions: { type: Array, required: true },
   qualityOptions: { type: Array, required: true },
+  outputFormatOptions: { type: Array, required: true },
   maxReferences: { type: Number, required: true },
   maxCount: { type: Number, required: true },
   count: { type: Number, required: true },
@@ -27,11 +29,13 @@ const emit = defineEmits([
   'update:ratio',
   'update:resolution',
   'update:quality',
+  'update:outputFormat',
   'update:count',
   'pick-reference',
   'remove-reference',
   'preview-reference',
   'generate',
+  'cancel',
 ]);
 </script>
 
@@ -58,7 +62,11 @@ const emit = defineEmits([
         @input="emit('update:prompt', $event.target.value)"
       ></textarea>
       <div class="prompt-tools">
-        <button :disabled="maxReferences === 0" @click="emit('pick-reference')">
+        <button
+          type="button"
+          :disabled="maxReferences === 0"
+          @click="emit('pick-reference')"
+        >
           <svg
             class="reference-upload-icon"
             viewBox="0 0 24 24"
@@ -87,11 +95,11 @@ const emit = defineEmits([
           @click="emit('preview-reference', index)"
         />
         <span>{{ item.name }}</span>
-        <button @click="emit('remove-reference', index)">×</button>
+        <button type="button" @click="emit('remove-reference', index)">×</button>
       </div>
     </div>
     <div class="control-row">
-      <label
+      <label class="model-control"
         ><span>模型选择</span
         ><DropdownSelect
           :model-value="model"
@@ -99,7 +107,7 @@ const emit = defineEmits([
           aria-label="选择图片生成模型"
           @update:model-value="emit('update:model', $event)"
       /></label>
-      <label
+      <label class="ratio-control"
         ><span>画面比例</span
         ><DropdownSelect
           :model-value="ratio"
@@ -107,7 +115,7 @@ const emit = defineEmits([
           aria-label="选择画面比例"
           @update:model-value="emit('update:ratio', $event)"
       /></label>
-      <label
+      <label class="resolution-control"
         ><span>分辨率</span
         ><DropdownSelect
           :model-value="resolution"
@@ -115,7 +123,7 @@ const emit = defineEmits([
           aria-label="选择分辨率"
           @update:model-value="emit('update:resolution', $event)"
       /></label>
-      <label v-if="modelIsGpt || modelIsGemini"
+      <label v-if="modelIsGpt || modelIsGemini" class="quality-control"
         ><span>质量</span
         ><DropdownSelect
           :model-value="quality"
@@ -123,21 +131,53 @@ const emit = defineEmits([
           aria-label="选择图片质量"
           @update:model-value="emit('update:quality', $event)"
       /></label>
-      <label>
+      <label class="output-format-control">
+        <span>输出格式</span>
+        <DropdownSelect
+          :model-value="outputFormat"
+          :options="outputFormatOptions"
+          aria-label="选择图片输出格式"
+          @update:model-value="emit('update:outputFormat', $event)"
+        />
+      </label>
+      <label class="count-control">
         <span>批量抽卡（最多 {{ maxCount }} 张）</span>
         <div class="stepper">
-          <button @click="emit('update:count', Math.max(1, count - 1))">
+          <button
+            type="button"
+            @click="emit('update:count', Math.max(1, count - 1))"
+          >
             −
           </button>
           <b>{{ count }}</b>
-          <button @click="emit('update:count', Math.min(maxCount, count + 1))">
+          <button
+            type="button"
+            @click="emit('update:count', Math.min(maxCount, count + 1))"
+          >
             ＋
           </button>
         </div>
       </label>
-      <button class="generate" :disabled="busy" @click="emit('generate')">
-        ✦ {{ busy ? '生成中…' : '生成' }}
-      </button>
+      <div class="generation-actions action-control">
+        <button
+          type="button"
+          class="generate"
+          :disabled="busy"
+          @click="emit('generate')"
+        >
+          ✦ {{ busy ? (count > 1 ? '批量生成中…' : '流式生成中…') : (count > 1 ? '批量生成' : '流式生成') }}
+        </button>
+        <button
+          v-if="busy"
+          type="button"
+          class="cancel"
+          title="取消生成"
+          aria-label="取消生成"
+          @click="emit('cancel')"
+        >
+          ×
+        </button>
+      </div>
     </div>
   </section>
 </template>
