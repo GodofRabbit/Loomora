@@ -1,7 +1,8 @@
 <script setup>
+import { computed, ref, watch } from 'vue';
 import DropdownSelect from './DropdownSelect.vue';
 
-defineProps({
+const props = defineProps({
   prompt: { type: String, required: true },
   reference: { type: Array, required: true },
   model: { type: String, required: true },
@@ -22,7 +23,12 @@ defineProps({
   modelIsGpt: Boolean,
   modelIsGemini: Boolean,
   busy: Boolean,
+  collapseSignal: { type: Number, default: 0 },
+  expandSignal: { type: Number, default: 0 },
 });
+const composerFocused = ref(false);
+const composerHost = ref(null);
+const compactComposer = computed(() => !composerFocused.value && !props.busy);
 const emit = defineEmits([
   'update:prompt',
   'update:model',
@@ -37,16 +43,49 @@ const emit = defineEmits([
   'generate',
   'cancel',
 ]);
+
+function onComposerFocusOut(event) {
+  if (
+    event.relatedTarget instanceof Node &&
+    event.currentTarget.contains(event.relatedTarget)
+  ) {
+    return;
+  }
+  composerFocused.value = false;
+}
+
+function collapseComposer() {
+  composerFocused.value = false;
+  const activeElement = document.activeElement;
+  if (activeElement && composerHost.value?.contains(activeElement)) {
+    activeElement.blur();
+  }
+}
+
+watch(
+  () => props.collapseSignal,
+  () => {
+    collapseComposer();
+  },
+);
+
+watch(
+  () => props.expandSignal,
+  () => {
+    composerFocused.value = true;
+  },
+);
 </script>
 
 <template>
-  <section class="intro">
-    <div class="eyebrow">✦ Loomora · 织光成画 ✦</div>
-    <h1>把灵感变成画面</h1>
-    <p>loom light into images.</p>
-    <small>灵感落笔处，光芒渐次生</small>
-  </section>
-  <section class="create-card">
+  <slot name="before-card"></slot>
+  <section
+    ref="composerHost"
+    class="create-card"
+    :class="{ compact: compactComposer }"
+    @focusin="composerFocused = true"
+    @focusout="onComposerFocusOut"
+  >
     <div class="card-title">
       <div>
         <span>✦</span>

@@ -536,7 +536,7 @@ export function useGenerationForm({ status, showToast }) {
     return true;
   }
 
-  async function regenerateFromConversation(turn = {}) {
+  async function regenerateFromConversation(turn = {}, options = {}) {
     if (busy.value) {
       status.value = '已有图片正在生成，请稍候';
       showToast(status.value, 'error');
@@ -553,9 +553,10 @@ export function useGenerationForm({ status, showToast }) {
     if (turn.resolution) resolution.value = String(turn.resolution);
     quality.value = turn.quality || 'auto';
     outputFormat.value = turn.outputFormat || 'png';
+    const requestedCount = Number(options.count) || Number(turn.count) || 1;
     count.value = Math.min(
       maxCount.value,
-      Math.max(1, Number(turn.count) || 1),
+      Math.max(1, requestedCount),
     );
     reference.value = [];
     status.value = '正在按历史记录重新生成...';

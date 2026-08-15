@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 const props = defineProps({
   view: { type: String, required: true },
@@ -10,6 +10,7 @@ const props = defineProps({
   conversationLimit: { type: Number, default: 10 },
   conversationHasOlder: Boolean,
   conversationHasNewer: Boolean,
+  scrollBottomSignal: { type: Number, default: 0 },
   images: { type: Array, required: true },
   imagePaths: { type: Array, required: true },
   liveImage: { type: String, default: '' },
@@ -42,8 +43,15 @@ const emit = defineEmits([
   'copy-prompt',
   'edit-prompt',
   'delete-conversation',
+  'regenerate-conversation',
+  'open-conversation-folder',
+  'conversation-scroll',
+  'conversation-scroll-state',
 ]);
 const dragActive = ref(false);
+const generationChat = ref(null);
+const suppressConversationScroll = ref(false);
+const conversationScrolledAway = ref(false);
 const batchActive = computed(
   () =>
     props.view === 'create' &&
@@ -194,6 +202,71 @@ function turnSlots(turn) {
     done: index < completed,
   }));
 }
+
+function scrollConversationToBottom({ smooth = false } = {}) {
+  const element = generationChat.value;
+  if (!element || props.view !== 'create') return;
+  nextTick(() => {
+    suppressConversationScroll.value = true;
+    if (smooth) {
+      element.scrollTo({
+        top: element.scrollHeight,
+        behavior: 'smooth',
+      });
+    } else {
+      element.scrollTop = element.scrollHeight;
+    }
+    window.setTimeout(() => {
+      suppressConversationScroll.value = false;
+      setConversationAwayFromBottom(false);
+    }, smooth ? 520 : 80);
+  });
+}
+
+function setConversationAwayFromBottom(value) {
+  if (conversationScrolledAway.value === value) return;
+  conversationScrolledAway.value = value;
+  emit('conversation-scroll-state', value);
+}
+
+function onConversationScroll() {
+  if (suppressConversationScroll.value) return;
+  const element = generationChat.value;
+  let awayFromBottom = conversationScrolledAway.value;
+  if (element) {
+    const distance =
+      element.scrollHeight - element.clientHeight - element.scrollTop;
+    if (conversationScrolledAway.value) {
+      awayFromBottom = distance > 24;
+    } else {
+      awayFromBottom = distance > 140;
+    }
+    setConversationAwayFromBottom(awayFromBottom);
+  }
+  if (awayFromBottom) emit('conversation-scroll');
+}
+
+watch(
+  () => [
+    props.view,
+    props.conversationOffset,
+    props.conversationHistory.length,
+    props.liveImage,
+    props.liveMessage,
+    props.conversationLoading,
+  ],
+  () => {
+    if (!props.conversationLoading) scrollConversationToBottom();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.scrollBottomSignal,
+  () => {
+    scrollConversationToBottom({ smooth: true });
+  },
+);
 </script>
 
 <template>
@@ -291,8 +364,10 @@ function turnSlots(turn) {
     </div>
     <div
       v-if="view === 'create'"
+      ref="generationChat"
       class="generation-chat"
       :class="{ empty: !conversationHistory.length }"
+      @scroll="onConversationScroll"
     >
       <div v-if="!conversationHistory.length" class="empty-state">
         <span class="create-empty-icon">✧</span><b>织一束光，生成第一幅作品</b
@@ -311,30 +386,48 @@ function turnSlots(turn) {
               <small>{{ turnTime(turn) }}</small>
             </div>
             <p>{{ turn.prompt }}</p>
-            <small>{{ turnMeta(turn) }}</small>
-            <div class="generation-chat-prompt-actions">
-              <button
-                type="button"
-                title="复制这条提示词"
-                @click="emit('copy-prompt', turn)"
-              >
-                复制
-              </button>
-              <button
-                type="button"
-                title="回填到创作面板继续编辑"
-                @click="emit('edit-prompt', turn)"
-              >
-                编辑
-              </button>
-              <button
-                type="button"
-                class="danger"
-                title="删除这轮对话记录，不删除作品库图片"
-                @click="emit('delete-conversation', turn)"
-              >
-                删除
-              </button>
+            <div class="generation-chat-user-foot">
+              <small>{{ turnMeta(turn) }}</small>
+              <div class="generation-chat-prompt-actions">
+                <button
+                  type="button"
+                  title="复制这条提示词"
+                  aria-label="复制这条提示词"
+                  @click="emit('copy-prompt', turn)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="9" y="9" width="10" height="10" rx="2" />
+                    <path d="M5 15V7a2 2 0 0 1 2-2h8" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  title="回填到创作面板继续编辑"
+                  aria-label="回填到创作面板继续编辑"
+                  @click="emit('edit-prompt', turn)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M4 20h4l10.5-10.5a2.8 2.8 0 0 0-4-4L4 16v4Z"
+                    />
+                    <path d="m13.5 6.5 4 4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="danger"
+                  title="删除这轮对话记录，不删除作品库图片"
+                  aria-label="删除这轮对话记录，不删除作品库图片"
+                  @click="emit('delete-conversation', turn)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M5 7h14" />
+                    <path d="M10 11v6M14 11v6" />
+                    <path d="M8 7l1-2h6l1 2" />
+                    <path d="M7 7l1 13h8l1-13" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
           <span class="generation-chat-avatar">我</span>
@@ -431,9 +524,31 @@ function turnSlots(turn) {
                   emit('context-menu', $event, src, turn.imagePaths?.[index])
                 "
               />
-              <small v-if="turn.folder" class="generation-chat-save-note">
-                已保存到 {{ turn.folder }}
-              </small>
+              <div v-if="turn.folder" class="generation-chat-save-note">
+                <button
+                  type="button"
+                  class="generation-chat-regenerate-button"
+                  title="按这轮对话重新生成"
+                  aria-label="按这轮对话重新生成"
+                  @click="emit('regenerate-conversation', turn)"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M17 3l4 4-4 4" />
+                    <path d="M3 11V9a2 2 0 0 1 2-2h16" />
+                    <path d="M7 21l-4-4 4-4" />
+                    <path d="M21 13v2a2 2 0 0 1-2 2H3" />
+                  </svg>
+                </button>
+                <small>保存至</small>
+                <button
+                  type="button"
+                  class="generation-chat-folder-link"
+                  :title="`打开文件夹：${turn.folder}`"
+                  @click="emit('open-conversation-folder', turn)"
+                >
+                  {{ turn.folder }}
+                </button>
+              </div>
             </div>
             <div v-else class="generation-chat-result-empty">
               <span>{{

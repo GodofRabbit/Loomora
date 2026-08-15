@@ -23,9 +23,14 @@ body {
       rgba(4, 5, 17, 0.82) 76%,
       #050611 100%
     ),
-    url('../assets/loomora-background.png');
-  background-position: center top;
-  background-size: max(100vw, 1220px) auto;
+    url('../assets/logo-bg.png');
+  background-position:
+    center center,
+    center center;
+  background-repeat: no-repeat;
+  background-size:
+    cover,
+    cover;
 }
 .topbar {
   position: sticky;
@@ -130,6 +135,38 @@ body {
   width: min(1340px, calc(100vw - 40px));
   padding-bottom: 84px;
 }
+.app-shell.create-view .content-scroll {
+  overflow-y: hidden;
+}
+.app-shell.create-view .custom-scrollbar {
+  display: none;
+}
+.app-shell.create-view main {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding-bottom: 24px;
+}
+.app-shell.create-view .intro {
+  flex: 0 0 auto;
+  padding: 38px 0 18px;
+}
+.app-shell.create-view .works {
+  display: flex;
+  min-height: 0;
+  margin-top: 24px;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.app-shell.create-view .generation-chat {
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+}
+.app-shell.create-view .create-card {
+  flex: 0 0 auto;
+}
 .intro {
   padding: 68px 0 38px;
 }
@@ -162,6 +199,11 @@ body {
   max-width: 1180px;
 }
 .create-card {
+  position: sticky;
+  z-index: 64;
+  bottom: 18px;
+  max-height: 620px;
+  overflow: hidden;
   padding: 24px 28px 22px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -174,6 +216,47 @@ body {
     0 24px 70px rgba(0, 0, 0, 0.56),
     0 0 32px rgba(109, 58, 200, 0.16) inset;
   backdrop-filter: blur(22px) saturate(115%);
+  transform-origin: bottom center;
+  transition:
+    max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    max-width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 0.24s ease,
+    border-color 0.2s ease,
+    box-shadow 0.24s ease,
+    transform 0.24s ease;
+}
+.create-card.compact {
+  max-width: 1180px;
+  max-height: 56px;
+  margin-right: auto;
+  margin-left: auto;
+  padding: 6px;
+  border-color: rgba(166, 119, 239, 0.28);
+  border-radius: 18px;
+  background: rgba(17, 15, 31, 0.94);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
+  transform: translateY(2px);
+}
+.create-card .card-title,
+.create-card .reference-list,
+.create-card .control-row,
+.create-card .prompt-tools {
+  transition:
+    opacity 0.18s ease,
+    transform 0.2s ease,
+    max-height 0.24s ease,
+    margin 0.2s ease;
+}
+.create-card.compact .card-title,
+.create-card.compact .reference-list,
+.create-card.compact .control-row,
+.create-card.compact .prompt-tools {
+  max-height: 0;
+  margin: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
 }
 .card-title h2 {
   font-size: 22px;
@@ -201,6 +284,20 @@ body {
   border-radius: 8px;
   background: rgba(27, 27, 48, 0.74);
   box-shadow: 0 0 22px rgba(106, 55, 202, 0.1) inset;
+  transition:
+    height 0.24s ease,
+    margin 0.22s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.22s ease;
+}
+.create-card.compact .prompt-box {
+  height: 42px;
+  margin-top: 0;
+  border-color: transparent;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: none;
 }
 .prompt-box:focus-within {
   border-color: #a879ff;
@@ -214,6 +311,17 @@ body {
   padding: 17px 18px 8px;
   color: var(--text);
   font-size: 14px;
+  transition:
+    height 0.24s ease,
+    min-height 0.24s ease,
+    padding 0.22s ease;
+}
+.create-card.compact .prompt-box textarea {
+  height: 40px;
+  min-height: 40px;
+  padding: 10px 15px;
+  overflow: hidden;
+  resize: none;
 }
 .prompt-box textarea::placeholder {
   color: #827c91;

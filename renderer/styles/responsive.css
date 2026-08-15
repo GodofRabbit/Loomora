@@ -41,6 +41,9 @@
   .gallery-drop-hint {
     display: none;
   }
+  .conversation-bottom-button {
+    right: 18px;
+  }
   .control-row {
     grid-template-columns:
       minmax(126px, 0.88fr) minmax(184px, 1.24fr) minmax(146px, 0.96fr)
@@ -66,6 +69,9 @@
   .generation-chat-user-bubble,
   .generation-chat-assistant-bubble {
     width: calc(100% - 40px);
+  }
+  .generation-chat {
+    max-height: clamp(340px, 58vh, 620px);
   }
   .generation-batch-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -108,6 +114,13 @@
   }
   .generation-actions {
     gap: 8px;
+  }
+  .generation-chat {
+    max-height: clamp(320px, 54vh, 560px);
+  }
+  .conversation-bottom-button {
+    right: 14px;
+    bottom: 84px;
   }
   .generation-actions .generate,
   .cancel {

@@ -11,6 +11,7 @@ const root = ref(null);
 const optionElements = ref([]);
 const open = ref(false);
 const activeIndex = ref(0);
+const placement = ref('down');
 const listboxId = `dropdown-${Math.random().toString(36).slice(2, 9)}`;
 const normalizedOptions = computed(() =>
   props.options.map((option) =>
@@ -26,6 +27,18 @@ const selectedLabel = computed(
 function focusActiveOption() {
   nextTick(() => optionElements.value[activeIndex.value]?.focus());
 }
+function updatePanelPlacement() {
+  if (!open.value || !root.value) return;
+  const rect = root.value.getBoundingClientRect();
+  const panel = root.value.querySelector('.dropdown-select-panel');
+  const panelHeight = panel
+    ? Math.min(panel.scrollHeight, 252)
+    : Math.min(normalizedOptions.value.length * 40 + 10, 252);
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  placement.value =
+    spaceBelow < panelHeight + 12 && spaceAbove > spaceBelow ? 'up' : 'down';
+}
 function openMenu() {
   activeIndex.value = Math.max(
     0,
@@ -34,7 +47,10 @@ function openMenu() {
     ),
   );
   open.value = true;
-  focusActiveOption();
+  nextTick(() => {
+    updatePanelPlacement();
+    focusActiveOption();
+  });
 }
 function toggleMenu() {
   if (open.value) {
@@ -91,15 +107,23 @@ function closeFromOutside(event) {
 onMounted(() => {
   document.addEventListener('pointerdown', closeFromOutside, true);
   document.addEventListener('focusin', closeFromOutside, true);
+  document.addEventListener('scroll', updatePanelPlacement, true);
+  window.addEventListener('resize', updatePanelPlacement);
 });
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeFromOutside, true);
   document.removeEventListener('focusin', closeFromOutside, true);
+  document.removeEventListener('scroll', updatePanelPlacement, true);
+  window.removeEventListener('resize', updatePanelPlacement);
 });
 </script>
 
 <template>
-  <div ref="root" class="dropdown-select" :class="{ open }">
+  <div
+    ref="root"
+    class="dropdown-select"
+    :class="{ open, 'drop-up': placement === 'up' }"
+  >
     <button
       class="dropdown-select-trigger"
       type="button"

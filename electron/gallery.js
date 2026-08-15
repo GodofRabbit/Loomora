@@ -854,6 +854,18 @@ function registerGalleryHandlers() {
     shell.showItemInFolder(target);
     return true;
   });
+
+  ipcMain.handle('open-folder', async (_event, folderPath) => {
+    const target = path.resolve(folderPath || '');
+    if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
+      throw new Error('文件夹不存在');
+    }
+    const error = await shell.openPath(target);
+    if (error) {
+      shell.showItemInFolder(target);
+    }
+    return true;
+  });
 }
 
 module.exports = { registerGalleryHandlers, saveGeneratedImages };

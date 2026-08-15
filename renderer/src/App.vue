@@ -36,9 +36,14 @@ const scrollThumbTop = ref(0);
 const scrollThumbHeight = ref(80);
 const scrollbarVisible = ref(false);
 const editorModal = ref(null);
+const composerCollapseSignal = ref(0);
+const composerExpandSignal = ref(0);
+const conversationAwayFromBottom = ref(false);
+const conversationScrollBottomSignal = ref(0);
 let toastTimer;
 let scrollResizeObserver;
 let stopGenerationUpdate;
+let lastComposerCollapseAt = 0;
 
 function showToast(message, type = 'success') {
   clearTimeout(toastTimer);
@@ -162,6 +167,34 @@ function updateScrollbar() {
         maxTop *
           (element.scrollTop / (element.scrollHeight - element.clientHeight))
       : 12;
+}
+
+function requestComposerCollapse() {
+  if (view.value !== 'create') return;
+  if (!conversationAwayFromBottom.value) return;
+  const now = Date.now();
+  if (now - lastComposerCollapseAt < 120) return;
+  lastComposerCollapseAt = now;
+  composerCollapseSignal.value += 1;
+}
+
+function handleContentScroll() {
+  updateScrollbar();
+  requestComposerCollapse();
+}
+
+function updateConversationScrollState(awayFromBottom) {
+  const wasAwayFromBottom = conversationAwayFromBottom.value;
+  conversationAwayFromBottom.value = Boolean(awayFromBottom);
+  if (view.value === 'create' && wasAwayFromBottom && !awayFromBottom) {
+    composerExpandSignal.value += 1;
+  }
+}
+
+function scrollConversationToBottom() {
+  conversationAwayFromBottom.value = false;
+  conversationScrollBottomSignal.value += 1;
+  composerExpandSignal.value += 1;
 }
 
 function startScrollDrag(event) {
@@ -504,7 +537,36 @@ async function regenerateContextImage() {
   const turn = contextMenu.value.generationTurn;
   contextMenu.value = null;
   view.value = 'create';
+  await regenerateFromConversation(turn, { count: 1 });
+}
+
+async function regenerateConversationTurn(turn) {
+  if (!turn?.prompt) return;
+  view.value = 'create';
   await regenerateFromConversation(turn);
+}
+
+async function openConversationFolder(turn) {
+  const folder = String(turn?.folder || '').trim();
+  if (!folder) return;
+  try {
+    if (window.forge?.openFolder) {
+      await window.forge.openFolder(folder);
+    } else if (turn.imagePaths?.[0]) {
+      await window.forge.showImageInFolder(turn.imagePaths[0]);
+    }
+  } catch (error) {
+    try {
+      if (turn.imagePaths?.[0]) {
+        await window.forge.showImageInFolder(turn.imagePaths[0]);
+        return;
+      }
+    } catch {
+      // Fall through to the user-facing error below.
+    }
+    status.value = formatUserMessage(error, '无法打开保存文件夹，请稍后重试');
+    showToast(status.value, 'error');
+  }
 }
 
 async function downloadContextImage() {
@@ -769,7 +831,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" @click="contextMenu = null">
+  <div
+    class="app-shell"
+    :class="{ 'create-view': view === 'create', 'gallery-view': view === 'gallery' }"
+    @click="contextMenu = null"
+  >
     <div class="window-titlebar" aria-hidden="true"></div>
     <AppHeader
       :active-view="view"
@@ -780,7 +846,7 @@ onBeforeUnmount(() => {
     <div
       ref="scrollContainer"
       class="content-scroll"
-      @scroll="updateScrollbar"
+      @scroll="handleContentScroll"
     >
       <nav
         v-if="view === 'gallery' && gallery.length"
@@ -833,15 +899,65 @@ onBeforeUnmount(() => {
           :model-is-gpt="modelIsGpt"
           :model-is-gemini="modelIsGemini"
           :busy="busy"
+          :collapse-signal="composerCollapseSignal"
+          :expand-signal="composerExpandSignal"
           @pick-reference="form.pickReference"
           @remove-reference="form.removeReference"
           @preview-reference="openReferencePreview"
           @generate="form.generate"
           @cancel="form.cancelGeneration"
         >
+          <template #before-card>
+            <WorksGallery
+              :view="view"
+              :conversation-history="conversationHistory"
+              :conversation-loading="conversationLoading"
+              :conversation-offset="conversationOffset"
+              :conversation-total="conversationTotal"
+              :conversation-limit="conversationLimit"
+              :conversation-has-older="conversationHasOlder"
+              :conversation-has-newer="conversationHasNewer"
+              :scroll-bottom-signal="conversationScrollBottomSignal"
+              :images="images"
+              :image-paths="imagePaths"
+              :live-image="liveImage"
+              :live-message="liveMessage"
+              :generation-mode="generationMode"
+              :live-progress="generationProgress"
+              :live-active="busy"
+              :gallery="filteredGallery"
+              :gallery-columns="galleryColumns"
+              :gallery-column-count="galleryColumnCount"
+              :gallery-loading="galleryLoading"
+              :gallery-importing="galleryImporting"
+              :gallery-filter-date="activeGalleryDate"
+              :gallery-selection-mode="gallerySelectionMode"
+              :gallery-selected-paths="selectedGalleryPaths"
+              :gallery-selected-count="selectedGalleryCount"
+              :gallery-exporting="galleryExporting"
+              @preview="openPreview"
+              @context-menu="showImageMenu"
+              @load-older-conversations="loadOlderConversations"
+              @load-newer-conversations="loadNewerConversations"
+              @copy-prompt="copyConversationPrompt"
+              @edit-prompt="editConversationPrompt"
+              @delete-conversation="deleteConversationRecord"
+              @regenerate-conversation="regenerateConversationTurn"
+              @open-conversation-folder="openConversationFolder"
+              @conversation-scroll="requestComposerCollapse"
+              @conversation-scroll-state="updateConversationScrollState"
+              @import="importGalleryImages()"
+              @import-drop="importGalleryImages"
+              @toggle-selection="toggleGallerySelection"
+              @toggle-selection-mode="toggleGallerySelectionMode"
+              @export-current="exportGalleryImages('current')"
+              @export-selected="exportGalleryImages('selected')"
+            />
+          </template>
           <template #status>{{ status || '准备就绪' }}</template>
         </CreationPanel>
         <WorksGallery
+          v-else
           :view="view"
           :conversation-history="conversationHistory"
           :conversation-loading="conversationLoading"
@@ -850,6 +966,7 @@ onBeforeUnmount(() => {
           :conversation-limit="conversationLimit"
           :conversation-has-older="conversationHasOlder"
           :conversation-has-newer="conversationHasNewer"
+          :scroll-bottom-signal="conversationScrollBottomSignal"
           :images="images"
           :image-paths="imagePaths"
           :live-image="liveImage"
@@ -874,6 +991,10 @@ onBeforeUnmount(() => {
           @copy-prompt="copyConversationPrompt"
           @edit-prompt="editConversationPrompt"
           @delete-conversation="deleteConversationRecord"
+          @regenerate-conversation="regenerateConversationTurn"
+          @open-conversation-folder="openConversationFolder"
+          @conversation-scroll="requestComposerCollapse"
+          @conversation-scroll-state="updateConversationScrollState"
           @import="importGalleryImages()"
           @import-drop="importGalleryImages"
           @toggle-selection="toggleGallerySelection"
@@ -881,6 +1002,21 @@ onBeforeUnmount(() => {
           @export-current="exportGalleryImages('current')"
           @export-selected="exportGalleryImages('selected')"
         />
+        <button
+          v-if="view === 'create' && conversationAwayFromBottom"
+          type="button"
+          class="conversation-bottom-button"
+          title="回到最新对话"
+          aria-label="回到最新对话"
+          @click="scrollConversationToBottom"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m7 7 5 5 5-5" />
+            <path d="m7 12 5 5 5-5" />
+            <path d="M5 20h14" />
+          </svg>
+          <span>回到底部</span>
+        </button>
       </main>
       <div v-show="scrollbarVisible" class="custom-scrollbar" aria-hidden="true">
         <div

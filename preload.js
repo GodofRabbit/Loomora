@@ -38,4 +38,5 @@ contextBridge.exposeInMainWorld('forge', {
   renameImage: (payload) => ipcRenderer.invoke('rename-image', payload),
   showImageInFolder: (filePath) =>
     ipcRenderer.invoke('show-image-in-folder', filePath),
+  openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
 });
