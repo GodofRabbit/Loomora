@@ -35,13 +35,14 @@ const USER_ERROR_RULES = [
 ];
 
 function galleryRoots() {
-  return [
-    path.resolve(
-      app.isPackaged ? path.dirname(process.execPath) : APP_ROOT,
-      'Gallery',
-    ),
-    path.resolve(app.getPath('userData'), 'Gallery'),
-  ];
+  const executableGallery = path.resolve(
+    app.isPackaged ? path.dirname(process.execPath) : APP_ROOT,
+    'Gallery',
+  );
+  const userDataGallery = path.resolve(app.getPath('userData'), 'Gallery');
+  return app.isPackaged && process.platform === 'darwin'
+    ? [userDataGallery, executableGallery]
+    : [executableGallery, userDataGallery];
 }
 
 function galleryDir() {

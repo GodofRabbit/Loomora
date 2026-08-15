@@ -2,7 +2,7 @@
 
 > 把灵感变成画面。Loom light into images.
 
-Loomora 是一款面向 Windows 的 AI 图片创作与管理桌面应用，基于 Electron、Vue 3 和 Vite 构建。它默认通过 OpenAI 官方图片生成接口生成作品，也支持切换到兼容 OpenAI 协议的服务地址，并在本地完成作品管理、图片编辑、马赛克处理和 OCR 文字识别。
+Loomora 是一款面向 Windows 与 macOS 的跨平台 AI 图片创作与管理桌面应用，基于 Electron、Vue 3 和 Vite 构建。它默认通过 OpenAI 官方图片生成接口生成作品，也支持切换到兼容 OpenAI 协议的服务地址，并在本地完成作品管理、图片编辑、马赛克处理和 OCR 文字识别。
 
 ## 功能概览
 
@@ -32,7 +32,7 @@ Loomora 是一款面向 Windows 的 AI 图片创作与管理桌面应用，基�
 - 下载时使用系统“另存为”窗口选择保存位置，完成后显示提示。
 - 删除本地作品前会弹出二次确认。
 
-应用会优先在程序所在目录创建 `Gallery/`。如果该目录不可写，则自动使用 Electron 用户数据目录下的 `Gallery/`。
+开发模式和 Windows 打包版会优先在程序所在目录创建 `Gallery/`，如果该目录不可写，则自动使用 Electron 用户数据目录下的 `Gallery/`。macOS 打包版会优先使用 Electron 用户数据目录下的 `Gallery/`，避免向 `.app` 应用包内部写入作品。
 
 ### 图片编辑
 
@@ -71,7 +71,7 @@ Loomora 集成 Paddle.js OCR，可从以下入口识别图片文字：
 
 ### 环境要求
 
-- Windows 10/11
+- Windows 10/11 或 macOS
 - Node.js 18 或更高版本
 - npm 9 或更高版本
 
@@ -105,13 +105,20 @@ npm run build:ui
 npm start
 ```
 
-### 打包 Windows 安装程序
+### 打包桌面应用
 
 ```bash
 npm run dist
 ```
 
-安装包由 electron-builder 以 NSIS 格式生成。
+`npm run dist` 会按当前系统平台调用 electron-builder。也可以使用平台明确的命令：
+
+```bash
+npm run dist:win
+npm run dist:mac
+```
+
+Windows 生成 NSIS 安装包，macOS 生成 DMG 安装包。
 
 ### 代码格式化
 
@@ -182,7 +189,7 @@ Content-Type: application/json
 | 开发与构建   | Vite 5                  |
 | 图片编辑     | TOAST UI Image Editor   |
 | 文字识别     | Paddle.js OCR           |
-| Windows 打包 | electron-builder + NSIS |
+| 桌面打包     | electron-builder（Windows NSIS / macOS DMG） |
 
 Electron 主进程负责窗口生命周期，并将图片生成和图库文件能力拆分到独立模块。渲染进程通过启用 `contextIsolation` 的预加载桥接调用这些能力，未开启 Node.js 集成。
 

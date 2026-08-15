@@ -11,7 +11,9 @@
     "dev:electron": "wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "build:ui": "vite build",
     "start": "npm run build:ui && electron .",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg"
   },
   "dependencies": {
     "@paddlejs-models/ocr": "^1.2.4",
@@ -39,6 +41,10 @@
     ],
     "win": {
       "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.graphics-design"
     }
   }
 }
