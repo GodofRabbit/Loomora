@@ -23,10 +23,16 @@ const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const JPEG_EXTENSIONS = new Set(['.jpg', '.jpeg']);
 
 const USER_ERROR_RULES = [
-  [/invalid api key|api key.*invalid|unauthorized|forbidden/i, 'API 密钥无效或权限不足'],
+  [
+    /invalid api key|api key.*invalid|unauthorized|forbidden/i,
+    'API 密钥无效或权限不足',
+  ],
   [/rate limit|too many requests/i, '请求过于频繁，请稍后重试'],
   [/timed? out|timeout/i, '请求超时，请稍后重试'],
-  [/failed to fetch|fetch failed|network|socket|dns|econnrefused|enotfound|econnreset/i, '网络连接异常，请检查网络后重试'],
+  [
+    /failed to fetch|fetch failed|network|socket|dns|econnrefused|enotfound|econnreset/i,
+    '网络连接异常，请检查网络后重试',
+  ],
   [/invalid url/i, '接口地址无效，请检查后重试'],
   [/model.*not found|unsupported model/i, '所选模型不可用'],
   [/content policy|policy violation/i, '提示词未通过安全检查'],
@@ -83,7 +89,9 @@ function isGalleryImage(filePath) {
 function sameFilePath(left, right) {
   const a = path.resolve(left || '');
   const b = path.resolve(right || '');
-  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  return process.platform === 'win32'
+    ? a.toLowerCase() === b.toLowerCase()
+    : a === b;
 }
 
 function mimeFromPath(filePath) {
@@ -141,7 +149,9 @@ function conversationDirectory(turn) {
     folder &&
     galleryRoots().some((root) => {
       const relative = path.relative(root, folder);
-      return relative && !relative.startsWith(`..${path.sep}`) && relative !== '..';
+      return (
+        relative && !relative.startsWith(`..${path.sep}`) && relative !== '..'
+      );
     })
   ) {
     return folder;
@@ -175,7 +185,10 @@ function sanitizeConversationTurn(turn = {}) {
     progress: {
       batchIndex: Math.max(0, Number(turn.progress?.batchIndex) || 0),
       total: Math.max(0, Number(turn.progress?.total) || 0),
-      completed: Math.max(0, Number(turn.progress?.completed) || imagePaths.length),
+      completed: Math.max(
+        0,
+        Number(turn.progress?.completed) || imagePaths.length,
+      ),
       failed: Math.max(0, Number(turn.progress?.failed) || 0),
       partial: Math.max(0, Number(turn.progress?.partial) || 0),
     },
@@ -206,7 +219,9 @@ function hydrateConversationTurn(turn) {
     const target = path.resolve(filePath || '');
     if (!isGalleryImage(target) || !fs.existsSync(target)) return;
     const buffer = fs.readFileSync(target);
-    images.push(`data:${mimeFromPath(target)};base64,${buffer.toString('base64')}`);
+    images.push(
+      `data:${mimeFromPath(target)};base64,${buffer.toString('base64')}`,
+    );
     imagePaths.push(target);
   });
   return {
@@ -225,7 +240,9 @@ function collectConversationTurns() {
     const dateDirectories = fs.readdirSync(root, { withFileTypes: true });
     for (const dateDirectory of dateDirectories) {
       if (!dateDirectory.isDirectory()) continue;
-      const filePath = conversationFilePath(path.join(root, dateDirectory.name));
+      const filePath = conversationFilePath(
+        path.join(root, dateDirectory.name),
+      );
       for (const turn of readConversationFile(filePath)) {
         const sanitized = sanitizeConversationTurn(turn);
         if (!sanitized.id || seen.has(sanitized.id)) continue;
@@ -281,7 +298,9 @@ function deleteConversationTurn(turnId) {
     if (!fs.existsSync(root)) continue;
     for (const dateDirectory of fs.readdirSync(root, { withFileTypes: true })) {
       if (!dateDirectory.isDirectory()) continue;
-      const filePath = conversationFilePath(path.join(root, dateDirectory.name));
+      const filePath = conversationFilePath(
+        path.join(root, dateDirectory.name),
+      );
       const turns = readConversationFile(filePath);
       if (!turns.length) continue;
       const nextTurns = turns.filter(
@@ -302,7 +321,9 @@ function updateStoredConversationImagePath(oldPath, nextPath) {
     if (!fs.existsSync(root)) continue;
     for (const dateDirectory of fs.readdirSync(root, { withFileTypes: true })) {
       if (!dateDirectory.isDirectory()) continue;
-      const filePath = conversationFilePath(path.join(root, dateDirectory.name));
+      const filePath = conversationFilePath(
+        path.join(root, dateDirectory.name),
+      );
       const turns = readConversationFile(filePath);
       let fileChanged = false;
       const nextTurns = turns.map((turn) => {
@@ -327,7 +348,9 @@ function removeStoredConversationImagePath(filePath) {
     if (!fs.existsSync(root)) continue;
     for (const dateDirectory of fs.readdirSync(root, { withFileTypes: true })) {
       if (!dateDirectory.isDirectory()) continue;
-      const historyPath = conversationFilePath(path.join(root, dateDirectory.name));
+      const historyPath = conversationFilePath(
+        path.join(root, dateDirectory.name),
+      );
       const turns = readConversationFile(historyPath);
       let fileChanged = false;
       const nextTurns = turns.map((turn) => {
@@ -438,19 +461,21 @@ function formatExportTimestamp(date = new Date()) {
 function normalizeRenameTarget(sourcePath, requestedName) {
   const source = path.resolve(sourcePath || '');
   const sourceExt = path.extname(source).toLowerCase();
-  const candidate = path.basename(String(requestedName || '').trim()).replace(
-    /[. ]+$/g,
-    '',
-  );
+  const candidate = path
+    .basename(String(requestedName || '').trim())
+    .replace(/[. ]+$/g, '');
   if (!candidate) throw new Error('请输入新的文件名');
   if (/[<>:"/\\|?*\u0000-\u001F]/.test(candidate)) {
     throw new Error('文件名不能包含 \\ / : * ? " < > | 等字符');
   }
   const parsed = path.parse(candidate);
   if (!parsed.name) throw new Error('请输入新的文件名');
-  const rawExt = parsed.ext && parsed.ext !== '.' ? parsed.ext.toLowerCase() : '';
+  const rawExt =
+    parsed.ext && parsed.ext !== '.' ? parsed.ext.toLowerCase() : '';
   if (rawExt && !IMAGE_EXTENSIONS.has(rawExt)) {
-    throw new Error('文件后缀只支持 PNG、JPG、JPEG、WEBP；如果不想改后缀，请把后缀删掉');
+    throw new Error(
+      '文件后缀只支持 PNG、JPG、JPEG、WEBP；如果不想改后缀，请把后缀删掉',
+    );
   }
   const requestedExt = rawExt;
   const baseName = requestedExt ? parsed.name : candidate;

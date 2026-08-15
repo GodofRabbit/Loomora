@@ -1,10 +1,18 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 import AppHeader from './components/AppHeader.vue';
 import CreationPanel from './components/CreationPanel.vue';
 import ImageContextMenu from './components/ImageContextMenu.vue';
 import ImageEditorModal from './components/ImageEditorModal.vue';
 import ImageLightbox from './components/ImageLightbox.vue';
+import InspirationSquare from './components/InspirationSquare.vue';
 import RenameModal from './components/RenameModal.vue';
 import OcrDrawer from './components/OcrDrawer.vue';
 import SettingsModal from './components/SettingsModal.vue';
@@ -21,10 +29,12 @@ const status = ref('');
 const settingsOpen = ref(false);
 const toast = ref(null);
 const gallery = ref([]);
+const galleryLoaded = ref(false);
 const galleryLoading = ref(false);
 const galleryImporting = ref(false);
 const galleryColumnCount = ref(4);
 const activeGalleryDate = ref('all');
+const gallerySearch = ref('');
 const gallerySelectionMode = ref(false);
 const selectedGalleryPaths = ref([]);
 const galleryExporting = ref(false);
@@ -44,6 +54,8 @@ let toastTimer;
 let scrollResizeObserver;
 let stopGenerationUpdate;
 let lastComposerCollapseAt = 0;
+let composerSettleTimer;
+let composerCollapseLockUntil = 0;
 
 function showToast(message, type = 'success') {
   clearTimeout(toastTimer);
@@ -94,6 +106,7 @@ const {
   loadConversationHistory,
   loadOlderConversations,
   loadNewerConversations,
+  loadLatestConversations,
   syncConversationImagePaths,
   removeConversationImagePath,
   addReferenceFromImage,
@@ -115,16 +128,25 @@ const galleryDateOptions = computed(() => {
     b.date.localeCompare(a.date),
   );
 });
-const filteredGallery = computed(() =>
-  activeGalleryDate.value === 'all'
-    ? gallery.value
-    : gallery.value.filter((item) => item.date === activeGalleryDate.value),
-);
+const filteredGallery = computed(() => {
+  const query = gallerySearch.value.trim().toLowerCase();
+  return gallery.value.filter((item) => {
+    const matchesDate =
+      activeGalleryDate.value === 'all' ||
+      item.date === activeGalleryDate.value;
+    const matchesSearch =
+      !query ||
+      `${item.name || ''} ${item.date || ''}`.toLowerCase().includes(query);
+    return matchesDate && matchesSearch;
+  });
+});
 const galleryColumns = computed(() =>
   distributeGalleryItems(filteredGallery.value, galleryColumnCount.value),
 );
 const selectedGalleryItems = computed(() =>
-  gallery.value.filter((item) => selectedGalleryPaths.value.includes(item.path)),
+  gallery.value.filter((item) =>
+    selectedGalleryPaths.value.includes(item.path),
+  ),
 );
 const selectedGalleryCount = computed(() => selectedGalleryItems.value.length);
 
@@ -173,6 +195,7 @@ function requestComposerCollapse() {
   if (view.value !== 'create') return;
   if (!conversationAwayFromBottom.value) return;
   const now = Date.now();
+  if (now < composerCollapseLockUntil) return;
   if (now - lastComposerCollapseAt < 120) return;
   lastComposerCollapseAt = now;
   composerCollapseSignal.value += 1;
@@ -184,15 +207,31 @@ function handleContentScroll() {
 }
 
 function updateConversationScrollState(awayFromBottom) {
+  const nextAwayFromBottom = Boolean(awayFromBottom);
+  if (
+    nextAwayFromBottom &&
+    view.value === 'create' &&
+    !conversationAwayFromBottom.value &&
+    Date.now() < composerCollapseLockUntil
+  ) {
+    return;
+  }
   const wasAwayFromBottom = conversationAwayFromBottom.value;
-  conversationAwayFromBottom.value = Boolean(awayFromBottom);
-  if (view.value === 'create' && wasAwayFromBottom && !awayFromBottom) {
+  conversationAwayFromBottom.value = nextAwayFromBottom;
+  if (view.value === 'create' && wasAwayFromBottom && !nextAwayFromBottom) {
+    composerCollapseLockUntil = Date.now() + 760;
     composerExpandSignal.value += 1;
+    window.clearTimeout(composerSettleTimer);
+    composerSettleTimer = window.setTimeout(() => {
+      if (view.value !== 'create' || conversationAwayFromBottom.value) return;
+      conversationScrollBottomSignal.value += 1;
+    }, 280);
   }
 }
 
 function scrollConversationToBottom() {
   conversationAwayFromBottom.value = false;
+  composerCollapseLockUntil = Date.now() + 820;
   conversationScrollBottomSignal.value += 1;
   composerExpandSignal.value += 1;
 }
@@ -286,7 +325,11 @@ function selectedGalleryExportItems() {
 }
 
 async function exportGalleryImages(scope) {
-  if (galleryLoading.value || galleryImporting.value || galleryExporting.value) {
+  if (
+    galleryLoading.value ||
+    galleryImporting.value ||
+    galleryExporting.value
+  ) {
     return;
   }
   const items =
@@ -299,9 +342,7 @@ async function exportGalleryImages(scope) {
         }));
   if (!items.length) {
     status.value =
-      scope === 'selected'
-        ? '请先勾选要导出的图片'
-        : '当前没有可导出的图片';
+      scope === 'selected' ? '请先勾选要导出的图片' : '当前没有可导出的图片';
     showToast(status.value, 'error');
     return;
   }
@@ -345,7 +386,7 @@ async function exportGalleryImages(scope) {
   }
 }
 
-function openPreview({ type, index = 0, item }) {
+function openPreview({ type, index = 0, item, items = [] }) {
   if (type === 'gallery') {
     const galleryIndex = filteredGallery.value.indexOf(item);
     if (galleryIndex < 0) return;
@@ -353,6 +394,11 @@ function openPreview({ type, index = 0, item }) {
       items: galleryPreviewItems(),
       index: galleryIndex,
     };
+    return;
+  }
+  if (type === 'direct') {
+    if (!items.length) return;
+    preview.value = { items, index };
     return;
   }
   if (type === 'conversation') {
@@ -376,7 +422,11 @@ function openReferencePreview(index) {
 }
 
 function basenameFromPath(filePath) {
-  return String(filePath || '').split(/[\\/]/).pop() || '';
+  return (
+    String(filePath || '')
+      .split(/[\\/]/)
+      .pop() || ''
+  );
 }
 
 function syncRenamedImage(oldPath, nextItem) {
@@ -470,10 +520,7 @@ function editConversationPrompt(turn) {
   if (turn.resolution) resolution.value = turn.resolution;
   if (turn.quality) quality.value = turn.quality;
   if (turn.outputFormat) outputFormat.value = turn.outputFormat;
-  count.value = Math.min(
-    maxCount.value,
-    Math.max(1, Number(turn.count) || 1),
-  );
+  count.value = Math.min(maxCount.value, Math.max(1, Number(turn.count) || 1));
   view.value = 'create';
   status.value = '已填入历史提示词，可继续编辑';
   showToast(status.value);
@@ -546,25 +593,120 @@ async function regenerateConversationTurn(turn) {
   await regenerateFromConversation(turn);
 }
 
+function svgDataUrlToPng(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth || image.width || 1024;
+      canvas.height = image.naturalHeight || image.height || 1024;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('无法处理灵感图片'));
+        return;
+      }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    image.onerror = () => reject(new Error('灵感图片数据无效'));
+    image.src = dataUrl;
+  });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('无法读取灵感图片'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function localAssetToDataUrl(source) {
+  if (/^https?:\/\//i.test(source)) {
+    throw new Error('灵感广场不使用外部网络图片地址');
+  }
+  const response = await fetch(source);
+  if (!response.ok) throw new Error('本地灵感图片读取失败');
+  const blob = await response.blob();
+  if (!blob.type.startsWith('image/')) throw new Error('灵感图片数据无效');
+  return {
+    data: await blobToDataUrl(blob),
+    extension:
+      blob.type === 'image/png'
+        ? 'png'
+        : blob.type === 'image/webp'
+          ? 'webp'
+          : 'jpg',
+  };
+}
+
+async function normalizeInspirationImageData(value) {
+  const source = String(value || '');
+  if (!source.startsWith('data:image/')) {
+    return localAssetToDataUrl(source);
+  }
+  if (source.startsWith('data:image/svg+xml')) {
+    return { data: await svgDataUrlToPng(source), extension: 'png' };
+  }
+  const extension = source.startsWith('data:image/webp')
+    ? 'webp'
+    : source.startsWith('data:image/png')
+      ? 'png'
+      : 'jpg';
+  return { data: source, extension };
+}
+
+function useInspirationPrompt(item) {
+  if (!item?.prompt) return;
+  prompt.value = item.prompt;
+  if (item.ratio) ratio.value = item.ratio;
+  if (item.resolution) resolution.value = item.resolution;
+  count.value = 1;
+  view.value = 'create';
+  composerExpandSignal.value += 1;
+  status.value = '已填入灵感提示词，可继续调整后生成';
+  showToast(status.value);
+}
+
+async function useInspirationReference(item) {
+  if (!item?.image) return;
+  status.value = '正在准备灵感参考图...';
+  try {
+    const result = await normalizeInspirationImageData(item.image);
+    const added = addReferenceFromImage(
+      result?.data,
+      `${item.title || '灵感参考图'}.${result.extension}`,
+    );
+    if (!added) return;
+    view.value = 'create';
+    composerExpandSignal.value += 1;
+  } catch (error) {
+    status.value = formatUserMessage(error, '灵感参考图准备失败，请稍后重试');
+    showToast(status.value, 'error');
+  }
+}
+
 async function openConversationFolder(turn) {
   const folder = String(turn?.folder || '').trim();
-  if (!folder) return;
+  const imagePath = String(turn?.imagePaths?.[0] || '').trim();
+  if (!folder && !imagePath) return;
   try {
-    if (window.forge?.openFolder) {
+    if (imagePath && window.forge?.showImageInFolder) {
+      await window.forge.showImageInFolder(imagePath);
+    } else if (window.forge?.openFolder) {
       await window.forge.openFolder(folder);
-    } else if (turn.imagePaths?.[0]) {
-      await window.forge.showImageInFolder(turn.imagePaths[0]);
     }
   } catch (error) {
     try {
-      if (turn.imagePaths?.[0]) {
-        await window.forge.showImageInFolder(turn.imagePaths[0]);
+      if (folder && window.forge?.openFolder) {
+        await window.forge.openFolder(folder);
         return;
       }
     } catch {
       // Fall through to the user-facing error below.
     }
-    status.value = formatUserMessage(error, '无法打开保存文件夹，请稍后重试');
+    status.value = formatUserMessage(error, '无法打开图片所在位置，请稍后重试');
     showToast(status.value, 'error');
   }
 }
@@ -691,6 +833,7 @@ async function saveRenameImage(nameDraft) {
 async function openGallery() {
   view.value = 'gallery';
   clearGallerySelection();
+  gallerySearch.value = '';
   if (galleryLoading.value) return;
   galleryLoading.value = true;
   scrollbarVisible.value = false;
@@ -698,6 +841,7 @@ async function openGallery() {
   await nextTick();
   try {
     gallery.value = sortGalleryItems(await window.forge.listGallery());
+    galleryLoaded.value = true;
   } catch (error) {
     gallery.value = [];
     status.value = formatUserMessage(error, '作品库加载失败，请稍后重试');
@@ -708,6 +852,14 @@ async function openGallery() {
   }
 }
 
+async function openInspiration() {
+  view.value = 'inspiration';
+  clearGallerySelection();
+  scrollbarVisible.value = false;
+  if (scrollContainer.value) scrollContainer.value.scrollTop = 0;
+  await nextTick(updateScrollbar);
+}
+
 async function importGalleryImages(files) {
   if (galleryImporting.value) return;
   galleryImporting.value = true;
@@ -716,6 +868,7 @@ async function importGalleryImages(files) {
     if (result.canceled) return;
     if (result.items.length) {
       gallery.value = sortGalleryItems([...result.items, ...gallery.value]);
+      galleryLoaded.value = true;
     }
     const importedCount = result.items.length;
     const failedCount = result.failed.length;
@@ -827,13 +980,18 @@ onBeforeUnmount(() => {
   stopGenerationUpdate?.();
   editor.destroy();
   clearTimeout(toastTimer);
+  clearTimeout(composerSettleTimer);
 });
 </script>
 
 <template>
   <div
     class="app-shell"
-    :class="{ 'create-view': view === 'create', 'gallery-view': view === 'gallery' }"
+    :class="{
+      'create-view': view === 'create',
+      'gallery-view': view === 'gallery',
+      'inspiration-view': view === 'inspiration',
+    }"
     @click="contextMenu = null"
   >
     <div class="window-titlebar" aria-hidden="true"></div>
@@ -841,6 +999,7 @@ onBeforeUnmount(() => {
       :active-view="view"
       @create="view = 'create'"
       @gallery="openGallery"
+      @inspiration="openInspiration"
       @settings="openSettings"
     />
     <div
@@ -914,7 +1073,6 @@ onBeforeUnmount(() => {
               :conversation-loading="conversationLoading"
               :conversation-offset="conversationOffset"
               :conversation-total="conversationTotal"
-              :conversation-limit="conversationLimit"
               :conversation-has-older="conversationHasOlder"
               :conversation-has-newer="conversationHasNewer"
               :scroll-bottom-signal="conversationScrollBottomSignal"
@@ -931,6 +1089,7 @@ onBeforeUnmount(() => {
               :gallery-loading="galleryLoading"
               :gallery-importing="galleryImporting"
               :gallery-filter-date="activeGalleryDate"
+              :gallery-search="gallerySearch"
               :gallery-selection-mode="gallerySelectionMode"
               :gallery-selected-paths="selectedGalleryPaths"
               :gallery-selected-count="selectedGalleryCount"
@@ -939,6 +1098,7 @@ onBeforeUnmount(() => {
               @context-menu="showImageMenu"
               @load-older-conversations="loadOlderConversations"
               @load-newer-conversations="loadNewerConversations"
+              @load-latest-conversations="loadLatestConversations"
               @copy-prompt="copyConversationPrompt"
               @edit-prompt="editConversationPrompt"
               @delete-conversation="deleteConversationRecord"
@@ -952,18 +1112,18 @@ onBeforeUnmount(() => {
               @toggle-selection-mode="toggleGallerySelectionMode"
               @export-current="exportGalleryImages('current')"
               @export-selected="exportGalleryImages('selected')"
+              @update-gallery-search="gallerySearch = $event"
             />
           </template>
           <template #status>{{ status || '准备就绪' }}</template>
         </CreationPanel>
         <WorksGallery
-          v-else
+          v-else-if="view === 'gallery'"
           :view="view"
           :conversation-history="conversationHistory"
           :conversation-loading="conversationLoading"
           :conversation-offset="conversationOffset"
           :conversation-total="conversationTotal"
-          :conversation-limit="conversationLimit"
           :conversation-has-older="conversationHasOlder"
           :conversation-has-newer="conversationHasNewer"
           :scroll-bottom-signal="conversationScrollBottomSignal"
@@ -980,6 +1140,7 @@ onBeforeUnmount(() => {
           :gallery-loading="galleryLoading"
           :gallery-importing="galleryImporting"
           :gallery-filter-date="activeGalleryDate"
+          :gallery-search="gallerySearch"
           :gallery-selection-mode="gallerySelectionMode"
           :gallery-selected-paths="selectedGalleryPaths"
           :gallery-selected-count="selectedGalleryCount"
@@ -988,6 +1149,7 @@ onBeforeUnmount(() => {
           @context-menu="showImageMenu"
           @load-older-conversations="loadOlderConversations"
           @load-newer-conversations="loadNewerConversations"
+          @load-latest-conversations="loadLatestConversations"
           @copy-prompt="copyConversationPrompt"
           @edit-prompt="editConversationPrompt"
           @delete-conversation="deleteConversationRecord"
@@ -1001,6 +1163,14 @@ onBeforeUnmount(() => {
           @toggle-selection-mode="toggleGallerySelectionMode"
           @export-current="exportGalleryImages('current')"
           @export-selected="exportGalleryImages('selected')"
+          @update-gallery-search="gallerySearch = $event"
+        />
+        <InspirationSquare
+          v-else-if="view === 'inspiration'"
+          :column-count="galleryColumnCount"
+          @use-prompt="useInspirationPrompt"
+          @use-reference="useInspirationReference"
+          @preview="openPreview"
         />
         <button
           v-if="view === 'create' && conversationAwayFromBottom"
@@ -1018,7 +1188,11 @@ onBeforeUnmount(() => {
           <span>回到底部</span>
         </button>
       </main>
-      <div v-show="scrollbarVisible" class="custom-scrollbar" aria-hidden="true">
+      <div
+        v-show="scrollbarVisible"
+        class="custom-scrollbar"
+        aria-hidden="true"
+      >
         <div
           class="custom-scrollbar-thumb"
           :style="{

@@ -1,6 +1,6 @@
 <script setup>
 defineProps({ activeView: { type: String, required: true } });
-defineEmits(['create', 'gallery', 'settings']);
+defineEmits(['create', 'gallery', 'inspiration', 'settings']);
 </script>
 
 <template>
@@ -15,7 +15,11 @@ defineEmits(['create', 'gallery', 'settings']);
       <a :class="{ active: activeView === 'gallery' }" @click="$emit('gallery')"
         >作品库</a
       >
-      <a>灵感广场</a>
+      <a
+        :class="{ active: activeView === 'inspiration' }"
+        @click="$emit('inspiration')"
+        >灵感广场</a
+      >
     </nav>
     <button
       type="button"

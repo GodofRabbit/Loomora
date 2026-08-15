@@ -23,14 +23,12 @@ body {
       rgba(4, 5, 17, 0.82) 76%,
       #050611 100%
     ),
-    url('../assets/logo-bg.png');
+    url('../assets/loomora-background.png');
   background-position:
     center center,
     center center;
   background-repeat: no-repeat;
-  background-size:
-    cover,
-    cover;
+  background-size: cover, cover;
 }
 .topbar {
   position: sticky;
@@ -135,18 +133,43 @@ body {
   width: min(1340px, calc(100vw - 40px));
   padding-bottom: 84px;
 }
+.app-shell.gallery-view {
+  --gallery-center-width: min(1180px, calc(100vw - 424px));
+  --gallery-timeline-width: 176px;
+  --gallery-actions-width: 96px;
+  --gallery-rail-gap: 18px;
+}
+.app-shell.gallery-view main {
+  width: var(--gallery-center-width);
+  padding-left: 0;
+}
+.app-shell.inspiration-view .content-scroll {
+  overflow-y: auto;
+}
+.app-shell.inspiration-view main {
+  display: block;
+  height: auto;
+  min-height: 0;
+  padding-bottom: 84px;
+}
+.app-shell.inspiration-view .inspiration-square {
+  display: block;
+  height: auto;
+  min-height: 0;
+}
 .app-shell.create-view .content-scroll {
-  overflow-y: hidden;
+  overflow: hidden;
 }
 .app-shell.create-view .custom-scrollbar {
   display: none;
 }
 .app-shell.create-view main {
+  position: relative;
   display: flex;
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  padding-bottom: 24px;
+  padding-bottom: 0;
 }
 .app-shell.create-view .intro {
   flex: 0 0 auto;
@@ -155,17 +178,24 @@ body {
 .app-shell.create-view .works {
   display: flex;
   min-height: 0;
-  margin-top: 24px;
+  margin-top: 0;
   flex: 1 1 auto;
   flex-direction: column;
 }
 .app-shell.create-view .generation-chat {
   min-height: 0;
   max-height: none;
+  margin-top: 0;
   flex: 1 1 auto;
+  padding-bottom: clamp(380px, 44vh, 560px);
 }
 .app-shell.create-view .create-card {
-  flex: 0 0 auto;
+  position: absolute;
+  right: 0;
+  bottom: 18px;
+  left: 0;
+  width: min(1180px, 100%);
+  margin: 0 auto;
 }
 .intro {
   padding: 68px 0 38px;

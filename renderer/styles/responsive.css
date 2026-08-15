@@ -1,22 +1,26 @@
 @media (max-width: 1499px) {
   .gallery-timeline {
-    width: 146px;
-    top: calc(var(--window-titlebar-height) + var(--topbar-height) + 76px);
     max-height: calc(
-      100vh - var(--window-titlebar-height) - var(--topbar-height) - 112px
+      100vh - var(--window-titlebar-height) - var(--topbar-height) - 108px
     );
-    padding: 8px 2px 8px 10px;
+    padding: 12px 8px 12px 16px;
+  }
+  .gallery-timeline::before {
+    left: 30px;
   }
   .gallery-timeline button {
-    min-height: 46px;
-    padding: 7px 0 7px 34px;
+    min-height: 44px;
+    padding: 7px 8px 7px 40px;
   }
   .gallery-timeline button::before {
-    left: 5px;
+    left: 10px;
+  }
+  .gallery-timeline button::after {
+    left: 23px;
   }
   .gallery-timeline button span {
     color: #d0c8df;
-    font-size: 11px;
+    font-size: 12px;
   }
   .gallery-timeline button b {
     color: #c9b6ff;
@@ -33,10 +37,18 @@
   }
   .gallery-select-button,
   .gallery-export-button,
-  .gallery-import-button,
-  .conversation-page-button {
-    padding: 0 10px;
-    font-size: 12px;
+  .gallery-import-button {
+    padding: 0 7px 0 8px;
+    font-size: 10px;
+  }
+  .gallery-side-actions {
+    width: var(--gallery-actions-width);
+  }
+  .inspiration-board {
+    gap: 14px;
+  }
+  .inspiration-column {
+    gap: 14px;
   }
   .gallery-drop-hint {
     display: none;
@@ -63,9 +75,6 @@
   .generation-actions {
     grid-column: 1 / -1;
   }
-  .generation-live-card {
-    grid-template-columns: 1fr;
-  }
   .generation-chat-user-bubble,
   .generation-chat-assistant-bubble {
     width: calc(100% - 40px);
@@ -73,8 +82,15 @@
   .generation-chat {
     max-height: clamp(340px, 58vh, 620px);
   }
-  .generation-batch-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .inspiration-head {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .works-head {
+    grid-template-columns: 1fr;
+  }
+  .gallery-search {
+    width: 100%;
   }
   .gallery {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -93,11 +109,10 @@
   }
   .gallery-select-button,
   .gallery-export-button,
-  .gallery-import-button,
-  .conversation-page-button {
-    height: 34px;
-    padding: 0 8px;
-    font-size: 11px;
+  .gallery-import-button {
+    height: 32px;
+    padding: 0 7px;
+    font-size: 10px;
   }
   .intro {
     padding-top: 48px;
@@ -105,8 +120,32 @@
   .intro h1 {
     font-size: 38px;
   }
+  .inspiration-square {
+    margin-top: 24px;
+  }
+  .inspiration-head h1 {
+    font-size: 30px;
+  }
+  .works-head h1 {
+    font-size: 30px;
+  }
+  .works-head-meta {
+    margin-top: 10px;
+  }
+  .inspiration-card-body {
+    padding: 12px;
+  }
+  .inspiration-card-media span,
+  .inspiration-card-media b {
+    top: 10px;
+    min-height: 26px;
+    padding: 0 9px;
+  }
   .create-card {
     padding: 20px;
+  }
+  .gallery-side-actions {
+    gap: 8px;
   }
   .control-row,
   .gallery {

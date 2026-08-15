@@ -14,7 +14,21 @@ body,
   font-family: Inter, 'Microsoft YaHei', sans-serif;
 }
 body {
-  background: #070817;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(5, 6, 17, 0.16) 0%,
+      rgba(5, 6, 17, 0.22) 46%,
+      rgba(5, 6, 17, 0.9) 82%,
+      #050611 100%
+    ),
+    url('../assets/loomora-background.png');
+  background-color: #070817;
+  background-position:
+    center center,
+    center center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: cover, cover;
   color: #f7f4ff;
   overflow: hidden;
 }
@@ -23,12 +37,21 @@ body {
   position: relative;
   overflow-x: hidden;
   overflow-y: hidden;
-  background: radial-gradient(
-    ellipse at 50% 16%,
-    #21104b 0,
-    #0c0a21 38%,
-    #060713 72%
-  );
+  background:
+    linear-gradient(
+      180deg,
+      rgba(5, 6, 17, 0.12) 0%,
+      rgba(5, 6, 17, 0.18) 46%,
+      rgba(5, 6, 17, 0.86) 82%,
+      #050611 100%
+    ),
+    url('../assets/loomora-background.png');
+  background-color: #050611;
+  background-position:
+    center center,
+    center center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: cover, cover;
   scrollbar-width: none;
 }
 .app-shell::-webkit-scrollbar {
@@ -78,8 +101,8 @@ body {
   box-shadow: 0 0 12px #8063c888;
 }
 .prompt-box textarea::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #c0aaff, #66c8e8) padding-box;
-  box-shadow: 0 0 16px #8fdcffcc;
+  background: linear-gradient(180deg, #c0aaff, #9d78ee) padding-box;
+  box-shadow: 0 0 16px #9d78eecc;
 }
 .prompt-box textarea::-webkit-scrollbar-corner {
   background: transparent;

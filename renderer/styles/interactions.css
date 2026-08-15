@@ -72,9 +72,11 @@ button:hover:not(:disabled) {
       #060713 100%
     ),
     url('../assets/loomora-background.png');
-  background-size: 100% auto;
-  background-position: center top;
-  background-repeat: no-repeat;
+  background-size: cover, cover;
+  background-position:
+    center center,
+    center center;
+  background-repeat: no-repeat, no-repeat;
 }
 .topbar {
   background: rgba(6, 6, 20, 0.66);

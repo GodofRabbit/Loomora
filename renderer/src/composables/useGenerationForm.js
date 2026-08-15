@@ -105,7 +105,9 @@ export function useGenerationForm({ status, showToast }) {
     const value = model.value.trim();
     return modelAliases[value] || value;
   });
-  const modelIsGpt = computed(() => normalizedModel.value === OPENAI_IMAGE_MODEL);
+  const modelIsGpt = computed(
+    () => normalizedModel.value === OPENAI_IMAGE_MODEL,
+  );
   const modelIsGemini = computed(() => false);
   const ratioOptions = computed(() =>
     gptRatios.map((value) => ({ value, label: ratioLabels[value] || value })),
@@ -225,7 +227,10 @@ export function useGenerationForm({ status, showToast }) {
     const imagesValue = Array.isArray(turn.images) ? turn.images : [];
     const total = Math.max(1, Number(turn.count) || imagePaths.length || 1);
     return {
-      id: String(turn.id || `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+      id: String(
+        turn.id ||
+          `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ),
       createdAt: Number(turn.createdAt) || Date.now(),
       prompt: String(turn.prompt || ''),
       model: String(turn.model || normalizedModel.value),
@@ -261,7 +266,9 @@ export function useGenerationForm({ status, showToast }) {
 
   function serializableConversationTurn(turn = {}) {
     const imagePaths = Array.isArray(turn.imagePaths)
-      ? turn.imagePaths.map((itemPath) => String(itemPath || '')).filter(Boolean)
+      ? turn.imagePaths
+          .map((itemPath) => String(itemPath || ''))
+          .filter(Boolean)
       : [];
     return {
       id: String(turn.id || ''),
@@ -284,7 +291,10 @@ export function useGenerationForm({ status, showToast }) {
       progress: {
         batchIndex: Math.max(0, Number(turn.progress?.batchIndex) || 0),
         total: Math.max(0, Number(turn.progress?.total) || 0),
-        completed: Math.max(0, Number(turn.progress?.completed) || imagePaths.length),
+        completed: Math.max(
+          0,
+          Number(turn.progress?.completed) || imagePaths.length,
+        ),
         failed: Math.max(0, Number(turn.progress?.failed) || 0),
         partial: Math.max(0, Number(turn.progress?.partial) || 0),
       },
@@ -296,7 +306,9 @@ export function useGenerationForm({ status, showToast }) {
   async function persistConversationTurn(turn = activeConversationTurn()) {
     if (!turn || !window.forge?.saveConversationTurn) return;
     try {
-      await window.forge.saveConversationTurn(serializableConversationTurn(turn));
+      await window.forge.saveConversationTurn(
+        serializableConversationTurn(turn),
+      );
     } catch (error) {
       status.value = formatUserMessage(error, '创作对话保存失败，请稍后重试');
       showToast(status.value, 'error');
@@ -320,7 +332,8 @@ export function useGenerationForm({ status, showToast }) {
       conversationOffset.value =
         typeof result?.offset === 'number' ? result.offset : offset;
       conversationTotal.value = Number(result?.total) || items.length;
-      conversationLimit.value = Number(result?.limit) || conversationLimit.value;
+      conversationLimit.value =
+        Number(result?.limit) || conversationLimit.value;
       const latestTurn =
         conversationOffset.value === 0
           ? [...conversationHistory.value]
@@ -339,16 +352,21 @@ export function useGenerationForm({ status, showToast }) {
 
   function loadOlderConversations() {
     if (conversationLoading.value || !conversationHasOlder.value) return;
-    loadConversationHistory(
+    return loadConversationHistory(
       conversationOffset.value + conversationHistory.value.length,
     );
   }
 
   function loadNewerConversations() {
     if (conversationLoading.value || !conversationHasNewer.value) return;
-    loadConversationHistory(
+    return loadConversationHistory(
       Math.max(0, conversationOffset.value - conversationLimit.value),
     );
+  }
+
+  function loadLatestConversations() {
+    if (conversationLoading.value || conversationOffset.value === 0) return;
+    return loadConversationHistory(0);
   }
 
   function syncConversationImagePaths(oldPath, nextPath) {
@@ -429,6 +447,9 @@ export function useGenerationForm({ status, showToast }) {
       generationProgress.value.partial = update.partial;
       updateActiveConversation((turn) => {
         turn.progress.partial = update.partial;
+        if (typeof update.preview === 'string') {
+          turn.liveImage = update.preview;
+        }
       });
     }
     if (typeof update.completed === 'number') {
@@ -554,10 +575,7 @@ export function useGenerationForm({ status, showToast }) {
     quality.value = turn.quality || 'auto';
     outputFormat.value = turn.outputFormat || 'png';
     const requestedCount = Number(options.count) || Number(turn.count) || 1;
-    count.value = Math.min(
-      maxCount.value,
-      Math.max(1, requestedCount),
-    );
+    count.value = Math.min(maxCount.value, Math.max(1, requestedCount));
     reference.value = [];
     status.value = '正在按历史记录重新生成...';
     await generate();
@@ -656,7 +674,10 @@ export function useGenerationForm({ status, showToast }) {
       if (typeof result?.images?.length === 'number' && result.images.length) {
         images.value = result.images;
       }
-      if (typeof result?.localPaths?.length === 'number' && result.localPaths.length) {
+      if (
+        typeof result?.localPaths?.length === 'number' &&
+        result.localPaths.length
+      ) {
         imagePaths.value = result.localPaths;
       }
       updateActiveConversation((turn) => {
@@ -694,7 +715,10 @@ export function useGenerationForm({ status, showToast }) {
       });
       await persistConversationTurn();
     } catch (error) {
-      status.value = formatUserMessage(error, '图片生成请求发送失败，请稍后重试');
+      status.value = formatUserMessage(
+        error,
+        '图片生成请求发送失败，请稍后重试',
+      );
       updateActiveConversation((turn) => {
         turn.status = 'error';
         turn.error = status.value;
@@ -750,6 +774,7 @@ export function useGenerationForm({ status, showToast }) {
     loadConversationHistory,
     loadOlderConversations,
     loadNewerConversations,
+    loadLatestConversations,
     persistConversationTurn,
     syncConversationImagePaths,
     removeConversationImagePath,
