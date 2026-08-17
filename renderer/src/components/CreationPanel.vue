@@ -76,6 +76,12 @@ function onComposerFocusOut(event) {
   ) {
     return;
   }
+  if (
+    !event.relatedTarget &&
+    event.target?.closest?.('.prompt-tools, .reference-list')
+  ) {
+    return;
+  }
   setComposerFocused(false);
 }
 
@@ -157,6 +163,7 @@ watch(
         <button
           type="button"
           :disabled="maxReferences === 0"
+          @mousedown.prevent
           @click="emit('pick-reference')"
         >
           <ImagePlus class="reference-upload-icon" aria-hidden="true" />
@@ -175,6 +182,7 @@ watch(
           :src="item.data"
           :alt="item.name"
           title="点击查看大图"
+          @mousedown.prevent
           @click="emit('preview-reference', index)"
         />
         <span>{{ item.name }}</span>
@@ -182,6 +190,7 @@ watch(
           type="button"
           title="移除参考图"
           aria-label="移除参考图"
+          @mousedown.prevent
           @click="emit('remove-reference', index)"
         >
           <X aria-hidden="true" />

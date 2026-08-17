@@ -66,6 +66,7 @@ const preview = ref(null);
 const contextMenu = ref(null);
 const renameModal = ref(null);
 const scrollContainer = ref(null);
+const creationGallery = ref(null);
 const scrollThumbTop = ref(0);
 const scrollThumbHeight = ref(80);
 const scrollbarVisible = ref(false);
@@ -86,7 +87,8 @@ let composerCollapseRequested = false;
 let viewRestoreFrame;
 let restoringViewScroll = false;
 let startupIdleTimer;
-const ONBOARDING_STORAGE_KEY = 'loomora:onboarding-complete:v1';
+let conversationScrollSnapshot = null;
+let creationComposerRestoreTimer;
 const viewScrollPositions = {
   create: 0,
   gallery: 0,
@@ -265,6 +267,26 @@ function requestComposerCollapse(options = {}) {
 
 function handleComposerFocusChange(focused) {
   if (focused) composerCollapseRequested = false;
+}
+
+function restoreCreationConversationAfterLayout(snapshot, duration = 620) {
+  if (!snapshot) return;
+  window.clearTimeout(creationComposerRestoreTimer);
+  nextTick(() => {
+    if (view.value !== 'create') return;
+    creationGallery.value?.restoreConversationScrollSnapshot?.(snapshot, {
+      duration,
+    });
+    creationComposerRestoreTimer = window.setTimeout(
+      () => {
+        if (view.value !== 'create') return;
+        creationGallery.value?.restoreConversationScrollSnapshot?.(snapshot, {
+          duration: 220,
+        });
+      },
+      Math.max(260, duration - 160),
+    );
+  });
 }
 
 function handleContentScroll() {
@@ -882,12 +904,20 @@ async function useContextImageAsReference() {
   }
 }
 
-async function openCreateComposerExpanded() {
+async function openCreateComposerExpanded(options = {}) {
+  const preserveConversationScroll =
+    options.preserveConversationScroll ?? view.value !== 'create';
+  const snapshot = preserveConversationScroll
+    ? conversationScrollSnapshot
+    : null;
   composerCollapseRequested = false;
   composerCollapseLockUntil = Date.now() + 900;
   view.value = 'create';
   await nextTick();
   if (!createStartMode.value) composerExpandSignal.value += 1;
+  if (preserveConversationScroll) {
+    restoreCreationConversationAfterLayout(snapshot);
+  }
 }
 
 async function useConversationImageAsReference(turn) {
@@ -933,7 +963,6 @@ async function useConversationImageAsReference(turn) {
     }`;
     showCreationToast(creationStatus.value);
     view.value = 'create';
-    composerExpandSignal.value += 1;
   } catch (error) {
     creationStatus.value = formatUserMessage(
       error,
@@ -961,6 +990,7 @@ async function regenerateConversationTurn(turn) {
   creationHistoryVisible.value = true;
   await regenerateFromConversation(turn, {
     onStart: showRegenerationWait,
+    reuseTurn: turn.status === 'error',
   });
 }
 
@@ -1362,22 +1392,23 @@ async function copyAuthorEmail() {
 }
 
 function finishOnboarding() {
-  localStorage.setItem(ONBOARDING_STORAGE_KEY, '1');
   Promise.resolve(window.forge?.setOnboardingComplete?.()).catch(() => {});
   onboardingOpen.value = false;
 }
 
 async function loadOnboardingState() {
-  const legacyCompleted = localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1';
-  if (legacyCompleted) {
-    onboardingOpen.value = false;
-    Promise.resolve(window.forge?.setOnboardingComplete?.()).catch(() => {});
-    return;
-  }
-
   try {
     const completed = await window.forge?.getOnboardingComplete?.();
-    onboardingOpen.value = completed !== true;
+    if (completed === true) {
+      onboardingOpen.value = false;
+      return;
+    }
+
+    onboardingOpen.value = true;
+    await nextTick();
+    // Mark the first-run guide as seen immediately, so force-quitting the app
+    // cannot make it appear again on every subsequent launch.
+    await window.forge?.setOnboardingComplete?.();
   } catch {
     onboardingOpen.value = true;
   }
@@ -1503,6 +1534,11 @@ watch(activeGalleryDate, () => {
 
 watch(view, (nextView, previousView) => {
   const element = scrollContainer.value;
+  if (previousView === 'create') {
+    conversationScrollSnapshot =
+      creationGallery.value?.captureConversationScrollSnapshot?.() ||
+      conversationScrollSnapshot;
+  }
   if (element && previousView in viewScrollPositions) {
     viewScrollPositions[previousView] = element.scrollTop;
   }
@@ -1518,6 +1554,11 @@ watch(view, (nextView, previousView) => {
         return;
       }
       scrollElement.scrollTop = viewScrollPositions[nextView] || 0;
+      if (nextView === 'create' && conversationScrollSnapshot) {
+        creationGallery.value?.restoreConversationScrollSnapshot?.(
+          conversationScrollSnapshot,
+        );
+      }
       updateScrollbar();
       restoringViewScroll = false;
     });
@@ -1534,6 +1575,7 @@ onBeforeUnmount(() => {
   stopGenerationUpdate?.();
   editor.destroy();
   clearTimeout(toastTimer);
+  window.clearTimeout(creationComposerRestoreTimer);
   window.cancelAnimationFrame(viewRestoreFrame);
 });
 </script>
@@ -1596,101 +1638,106 @@ onBeforeUnmount(() => {
         </button>
       </nav>
       <main>
-        <CreationPanel
-          v-if="view === 'create'"
-          v-model:prompt="prompt"
-          v-model:model="model"
-          v-model:ratio="ratio"
-          v-model:resolution="resolution"
-          v-model:quality="quality"
-          v-model:output-format="outputFormat"
-          v-model:count="count"
-          :reference="reference"
-          :counter="counter"
-          :prompt-limit="promptLimit"
-          :model-options="modelOptions"
-          :ratio-options="ratioOptions"
-          :resolution-options="resolutionOptions"
-          :quality-options="qualityOptions"
-          :output-format-options="outputFormatOptions"
-          :max-references="maxReferences"
-          :max-count="maxCount"
-          :model-is-gpt="modelIsGpt"
-          :model-is-gemini="modelIsGemini"
-          :busy="busy"
-          :start-mode="createStartMode"
-          :show-bottom-button="
-            view === 'create' && !createStartMode && conversationAwayFromBottom
-          "
-          :collapse-signal="composerCollapseSignal"
-          :expand-signal="composerExpandSignal"
-          :reveal-signal="composerRevealSignal"
-          @pick-reference="form.pickReference"
-          @remove-reference="form.removeReference"
-          @preview-reference="openReferencePreview"
-          @generate="generateFromComposer"
-          @cancel="form.cancelGeneration"
-          @scroll-bottom="scrollConversationToBottom"
-          @composer-focus-change="handleComposerFocusChange"
-        >
-          <template #before-card>
-            <WorksGallery
-              view="create"
-              :active="view === 'create'"
-              :conversation-history="visibleConversationHistory"
-              :conversation-loading="conversationLoading"
-              :conversation-offset="conversationOffset"
-              :conversation-total="conversationTotal"
-              :conversation-start-mode="createStartMode"
-              :conversation-has-older="conversationHasOlder"
-              :conversation-has-newer="conversationHasNewer"
-              :scroll-bottom-signal="conversationScrollBottomSignal"
-              :follow-bottom-signal="conversationFollowBottomSignal"
-              :images="images"
-              :image-paths="imagePaths"
-              :live-image="liveImage"
-              :live-message="liveMessage"
-              :generation-mode="generationMode"
-              :live-progress="generationProgress"
-              :live-active="busy"
-              :gallery="filteredGallery"
-              :gallery-columns="galleryColumns"
-              :gallery-column-count="galleryColumnCount"
-              :gallery-loading="galleryLoading"
-              :gallery-importing="galleryImporting"
-              :gallery-filter-date="activeGalleryDate"
-              :gallery-search="gallerySearch"
-              :gallery-selection-mode="gallerySelectionMode"
-              :gallery-selected-paths="selectedGalleryPaths"
-              :gallery-selected-count="selectedGalleryCount"
-              :gallery-exporting="galleryExporting"
-              :gallery-deleting="galleryDeleting"
-              @preview="openPreview"
-              @context-menu="showImageMenu"
-              @load-older-conversations="loadOlderConversations"
-              @load-newer-conversations="loadNewerConversations"
-              @load-latest-conversations="loadLatestConversations"
-              @show-conversation-history="showCreationHistory"
-              @copy-prompt="copyConversationPrompt"
-              @edit-prompt="editConversationPrompt"
-              @delete-conversation="requestDeleteConversation"
-              @regenerate-conversation="regenerateConversationTurn"
-              @reference-conversation-image="useConversationImageAsReference"
-              @open-conversation-folder="openConversationFolder"
-              @conversation-scroll="requestComposerCollapse"
-              @conversation-scroll-state="updateConversationScrollState"
-              @import="importGalleryImages()"
-              @import-drop="importGalleryImages"
-              @toggle-selection="toggleGallerySelection"
-              @toggle-selection-mode="toggleGallerySelectionMode"
-              @export-current="exportGalleryImages('current')"
-              @export-selected="exportGalleryImages('selected')"
-              @clear-all="clearAllGalleryImages"
-              @delete-selected="deleteSelectedGalleryImages"
-              @update-gallery-search="gallerySearch = $event"
-            />
-          </template>
-        </CreationPanel>
+        <KeepAlive>
+          <CreationPanel
+            v-if="view === 'create'"
+            v-model:prompt="prompt"
+            v-model:model="model"
+            v-model:ratio="ratio"
+            v-model:resolution="resolution"
+            v-model:quality="quality"
+            v-model:output-format="outputFormat"
+            v-model:count="count"
+            :reference="reference"
+            :counter="counter"
+            :prompt-limit="promptLimit"
+            :model-options="modelOptions"
+            :ratio-options="ratioOptions"
+            :resolution-options="resolutionOptions"
+            :quality-options="qualityOptions"
+            :output-format-options="outputFormatOptions"
+            :max-references="maxReferences"
+            :max-count="maxCount"
+            :model-is-gpt="modelIsGpt"
+            :model-is-gemini="modelIsGemini"
+            :busy="busy"
+            :start-mode="createStartMode"
+            :show-bottom-button="
+              view === 'create' &&
+              !createStartMode &&
+              conversationAwayFromBottom
+            "
+            :collapse-signal="composerCollapseSignal"
+            :expand-signal="composerExpandSignal"
+            :reveal-signal="composerRevealSignal"
+            @pick-reference="form.pickReference"
+            @remove-reference="form.removeReference"
+            @preview-reference="openReferencePreview"
+            @generate="generateFromComposer"
+            @cancel="form.cancelGeneration"
+            @scroll-bottom="scrollConversationToBottom"
+            @composer-focus-change="handleComposerFocusChange"
+          >
+            <template #before-card>
+              <WorksGallery
+                ref="creationGallery"
+                view="create"
+                :active="view === 'create'"
+                :conversation-history="visibleConversationHistory"
+                :conversation-loading="conversationLoading"
+                :conversation-offset="conversationOffset"
+                :conversation-total="conversationTotal"
+                :conversation-start-mode="createStartMode"
+                :conversation-has-older="conversationHasOlder"
+                :conversation-has-newer="conversationHasNewer"
+                :scroll-bottom-signal="conversationScrollBottomSignal"
+                :follow-bottom-signal="conversationFollowBottomSignal"
+                :images="images"
+                :image-paths="imagePaths"
+                :live-image="liveImage"
+                :live-message="liveMessage"
+                :generation-mode="generationMode"
+                :live-progress="generationProgress"
+                :live-active="busy"
+                :gallery="filteredGallery"
+                :gallery-columns="galleryColumns"
+                :gallery-column-count="galleryColumnCount"
+                :gallery-loading="galleryLoading"
+                :gallery-importing="galleryImporting"
+                :gallery-filter-date="activeGalleryDate"
+                :gallery-search="gallerySearch"
+                :gallery-selection-mode="gallerySelectionMode"
+                :gallery-selected-paths="selectedGalleryPaths"
+                :gallery-selected-count="selectedGalleryCount"
+                :gallery-exporting="galleryExporting"
+                :gallery-deleting="galleryDeleting"
+                @preview="openPreview"
+                @context-menu="showImageMenu"
+                @load-older-conversations="loadOlderConversations"
+                @load-newer-conversations="loadNewerConversations"
+                @load-latest-conversations="loadLatestConversations"
+                @show-conversation-history="showCreationHistory"
+                @copy-prompt="copyConversationPrompt"
+                @edit-prompt="editConversationPrompt"
+                @delete-conversation="requestDeleteConversation"
+                @regenerate-conversation="regenerateConversationTurn"
+                @reference-conversation-image="useConversationImageAsReference"
+                @open-conversation-folder="openConversationFolder"
+                @conversation-scroll="requestComposerCollapse"
+                @conversation-scroll-state="updateConversationScrollState"
+                @import="importGalleryImages()"
+                @import-drop="importGalleryImages"
+                @toggle-selection="toggleGallerySelection"
+                @toggle-selection-mode="toggleGallerySelectionMode"
+                @export-current="exportGalleryImages('current')"
+                @export-selected="exportGalleryImages('selected')"
+                @clear-all="clearAllGalleryImages"
+                @delete-selected="deleteSelectedGalleryImages"
+                @update-gallery-search="gallerySearch = $event"
+              />
+            </template>
+          </CreationPanel>
+        </KeepAlive>
         <WorksGallery
           v-if="galleryVisited"
           v-show="view === 'gallery'"

@@ -103,6 +103,7 @@ let scrollSettleTimer;
 let pageRestoreTimer;
 let pageLoadFrame;
 let followBottomFrame;
+let externalRestoreFrame;
 let galleryVirtualFrame;
 let galleryCardObserver;
 let pendingConversationLoad = null;
@@ -485,12 +486,69 @@ function restoreConversationAnchor(element, anchor) {
   return true;
 }
 
+function captureConversationScrollSnapshot() {
+  const element = generationChat.value;
+  if (!element || props.view !== 'create') return null;
+  const distanceFromBottom = Math.max(
+    0,
+    element.scrollHeight - element.clientHeight - element.scrollTop,
+  );
+  return {
+    anchor: conversationAnchor(element, 'older'),
+    scrollTop: element.scrollTop,
+    atBottom: props.conversationOffset === 0 && distanceFromBottom <= 72,
+  };
+}
+
+function restoreConversationScrollSnapshot(snapshot, options = {}) {
+  if (!snapshot || props.view !== 'create') return;
+  const duration = Number(options.duration) || 380;
+  window.cancelAnimationFrame(externalRestoreFrame);
+  nextTick(() => {
+    const startedAt = performance.now();
+    suppressConversationScroll.value = true;
+
+    const restore = (now) => {
+      const element = generationChat.value;
+      if (!element || !props.active) {
+        suppressConversationScroll.value = false;
+        return;
+      }
+      if (snapshot.atBottom && props.conversationOffset === 0) {
+        element.scrollTop = element.scrollHeight;
+      } else if (!restoreConversationAnchor(element, snapshot.anchor)) {
+        element.scrollTop = Math.min(
+          Number(snapshot.scrollTop) || 0,
+          Math.max(0, element.scrollHeight - element.clientHeight),
+        );
+      }
+      lastConversationScrollTop = element.scrollTop;
+      if (now - startedAt < duration) {
+        externalRestoreFrame = window.requestAnimationFrame(restore);
+        return;
+      }
+      externalRestoreFrame = undefined;
+      suppressConversationScroll.value = false;
+      setConversationAwayFromBottom(measureConversationAwayFromBottom());
+    };
+
+    externalRestoreFrame = window.requestAnimationFrame(restore);
+  });
+}
+
+defineExpose({
+  captureConversationScrollSnapshot,
+  restoreConversationScrollSnapshot,
+});
+
 function clearScrollSettleTimers() {
   window.clearTimeout(suppressConversationTimer);
   window.clearTimeout(scrollSettleTimer);
   window.clearTimeout(pageRestoreTimer);
   window.cancelAnimationFrame(pageLoadFrame);
   window.cancelAnimationFrame(followBottomFrame);
+  window.cancelAnimationFrame(externalRestoreFrame);
+  externalRestoreFrame = undefined;
 }
 
 function updateGalleryStickyState() {
@@ -866,6 +924,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearScrollSettleTimers();
+  window.cancelAnimationFrame(externalRestoreFrame);
   galleryCardObserver?.disconnect();
   galleryCardElements.clear();
   galleryScrollRoot?.removeEventListener('scroll', updateGalleryStickyState);

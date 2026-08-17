@@ -211,6 +211,44 @@ export function useGenerationForm({ status, showToast }) {
     return turn;
   }
 
+  function reuseConversationTurn(turn, total, request) {
+    const target = conversationHistory.value.find(
+      (item) => item.id === turn?.id,
+    );
+    if (!target) return createConversationTurn(total, request);
+
+    Object.assign(target, {
+      prompt: request.prompt.trim(),
+      model: request.model,
+      ratio: request.aspect,
+      resolution: request.size,
+      quality: request.quality,
+      outputFormat: request.outputFormat,
+      count: total,
+      referenceCount: request.reference.length,
+      references: request.reference.map(({ name, data }) => ({ name, data })),
+      referencePaths: [],
+      referenceNames: request.reference.map(({ name }) => name),
+      mode: total > 1 ? 'batch' : 'stream',
+      status: 'running',
+      message: '',
+      liveImage: '',
+      images: [],
+      imagePaths: [],
+      progress: {
+        batchIndex: 0,
+        total,
+        completed: 0,
+        failed: 0,
+        partial: 0,
+      },
+      error: '',
+      completedAt: null,
+    });
+    activeConversationId.value = target.id;
+    return target;
+  }
+
   function activeConversationTurn() {
     return (
       conversationHistory.value.find(
@@ -680,6 +718,7 @@ export function useGenerationForm({ status, showToast }) {
     const historicalReferences = await loadConversationReferences(turn);
     return generate({
       onStart: options.onStart,
+      reuseTurn: options.reuseTurn ? turn : null,
       request: {
         model: String(turn.model || model.value),
         prompt: String(turn.prompt),
@@ -789,7 +828,11 @@ export function useGenerationForm({ status, showToast }) {
     }
   }
 
-  async function generate({ onStart, request: requestOverrides = {} } = {}) {
+  async function generate({
+    onStart,
+    request: requestOverrides = {},
+    reuseTurn = null,
+  } = {}) {
     const request = getGenerationPayload(requestOverrides);
     if (!request.prompt.trim()) {
       status.value = '请输入提示词';
@@ -811,7 +854,8 @@ export function useGenerationForm({ status, showToast }) {
     busy.value = true;
     resetGenerationState();
     const total = request.count;
-    createConversationTurn(total, request);
+    if (reuseTurn) reuseConversationTurn(reuseTurn, total, request);
+    else createConversationTurn(total, request);
     onStart?.();
     generationMode.value = total > 1 ? 'batch' : 'stream';
     generationProgress.value.total = total;
