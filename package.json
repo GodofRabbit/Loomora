@@ -13,29 +13,35 @@
     "build:ui": "vite build",
     "start": "npm run dev",
     "start:prod": "npm run build:ui && electron .",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win nsis",
-    "dist:mac": "electron-builder --mac dmg"
-  },
-  "dependencies": {
-    "@paddlejs-models/ocr": "^1.2.4",
-    "lucide-vue-next": "^0.468.0",
-    "tui-image-editor": "^3.15.3",
-    "vue": "^3.4.31"
+    "dist": "npm run build:ui && node scripts/package-app.js",
+    "dist:win": "npm run build:ui && node scripts/package-app.js --win",
+    "dist:mac": "npm run build:ui && node scripts/package-app.js --mac"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.5",
+    "@paddlejs-models/ocr": "^1.2.4",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
+    "lucide-vue-next": "^0.468.0",
     "prettier": "^3.9.6",
+    "tui-image-editor": "^3.15.3",
     "vite": "^5.3.4",
+    "vue": "^3.4.31",
     "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.imageforge.app",
     "productName": "Loomora",
+    "asar": true,
+    "compression": "maximum",
+    "npmRebuild": false,
+    "electronLanguages": [
+      "en-US",
+      "zh-CN",
+      "zh-TW"
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -47,6 +53,10 @@
     "win": {
       "icon": "build/icon-system.ico",
       "target": "nsis"
+    },
+    "nsis": {
+      "differentialPackage": false,
+      "packElevateHelper": false
     },
     "mac": {
       "icon": "build/icon-system.icns",
