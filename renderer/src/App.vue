@@ -85,6 +85,7 @@ let composerCollapseLockUntil = 0;
 let composerCollapseRequested = false;
 let viewRestoreFrame;
 let restoringViewScroll = false;
+let startupIdleTimer;
 const ONBOARDING_STORAGE_KEY = 'loomora:onboarding-complete:v1';
 const viewScrollPositions = {
   create: 0,
@@ -1438,8 +1439,6 @@ onMounted(() => {
   stopGenerationUpdate = window.forge?.onGenerationUpdate?.((update) => {
     applyGenerationUpdate(update);
   });
-  loadConversationHistory();
-  loadGalleryStorageSettings().catch(() => {});
   window.forge
     ?.getAppInfo?.()
     .then((result) => {
@@ -1448,6 +1447,27 @@ onMounted(() => {
     .catch(() => {});
   loadOnboardingState();
   nextTick(updateScrollbar);
+  const runDeferredStartup = () => {
+    loadConversationHistory();
+    loadGalleryStorageSettings().catch(() => {});
+  };
+  if ('requestIdleCallback' in window) {
+    startupIdleTimer = window.requestIdleCallback(runDeferredStartup, {
+      timeout: 1200,
+    });
+  } else {
+    startupIdleTimer = window.setTimeout(runDeferredStartup, 120);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (startupIdleTimer == null) return;
+  if ('cancelIdleCallback' in window) {
+    window.cancelIdleCallback(startupIdleTimer);
+  } else {
+    window.clearTimeout(startupIdleTimer);
+  }
+  startupIdleTimer = undefined;
 });
 
 watch(galleryDateOptions, (options) => {

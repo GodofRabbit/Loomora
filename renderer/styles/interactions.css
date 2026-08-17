@@ -50,7 +50,6 @@ button:hover:not(:disabled) {
   padding: 6px 8px;
   border: 1px solid #39304f;
   border-radius: 8px;
-  background: #17172a;
 }
 .reference-list .reference span {
   overflow: hidden;

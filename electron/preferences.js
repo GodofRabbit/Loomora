@@ -19,11 +19,14 @@ function readOnboardingComplete() {
 
 function writeOnboardingComplete() {
   const target = onboardingStatePath();
+  const temporaryTarget = `${target}.tmp`;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(
-    target,
+    temporaryTarget,
     JSON.stringify({ onboardingComplete: true }, null, 2),
     'utf8',
   );
+  fs.renameSync(temporaryTarget, target);
 }
 
 function registerPreferenceHandlers() {

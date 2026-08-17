@@ -57,7 +57,16 @@
     "nsis": {
       "differentialPackage": false,
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "multiLanguageInstaller": true,
+      "language": "2052",
+      "installerHeader": "build/installer-header.bmp",
+      "installerSidebar": "build/installer-sidebar.bmp",
+      "uninstallerSidebar": "build/installer-sidebar.bmp"
     },
     "mac": {
       "icon": "build/icon-system.icns",

@@ -90,7 +90,7 @@ body {
   flex: 0 0 60px;
   border-radius: 50%;
   background-color: transparent;
-  background-image: url('../assets/logo.png');
+  background-image: url('../assets/logo-ui.png');
   background-size: contain;
   background-repeat: no-repeat;
   transform: translateY(-2px);

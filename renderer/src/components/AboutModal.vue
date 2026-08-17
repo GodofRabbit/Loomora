@@ -1,6 +1,6 @@
 <script setup>
 import { BookOpen, CircleHelp, Copy, Sparkles, X } from 'lucide-vue-next';
-import appLogo from '../../assets/logo.png';
+import appLogo from '../../assets/logo-ui.png';
 
 defineProps({
   open: Boolean,
