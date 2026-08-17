@@ -1,5 +1,5 @@
-export const API_KEY_STORAGE = 'loomora-key';
-export const ENDPOINT_STORAGE = 'loomora-endpoint';
+export const API_KEY_STORAGE = 'loomora-api-key-v2';
+export const ENDPOINT_STORAGE = 'loomora-endpoint-v2';
 export const OPENAI_API_BASE = 'https://api.openai.com';
 export const DEFAULT_ENDPOINT = OPENAI_API_BASE;
 export const OPENAI_IMAGE_MODEL = 'gpt-image-2';

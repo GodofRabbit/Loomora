@@ -18,6 +18,11 @@ const APP_ICON_PATH =
 let applicationIcon;
 let mainWindow;
 
+function configureUserDataPath() {
+  if (app.isPackaged) return;
+  app.setPath('userData', path.join(app.getPath('appData'), 'Loomora Dev'));
+}
+
 function createWindow() {
   const isMac = process.platform === 'darwin';
   const window = new BrowserWindow({
@@ -59,6 +64,7 @@ function createWindow() {
     : window.loadFile(path.join(__dirname, 'renderer-dist', 'index.html'));
 }
 
+configureUserDataPath();
 registerGalleryScheme();
 registerGalleryHandlers();
 registerGenerationHandler();

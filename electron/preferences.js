@@ -3,6 +3,7 @@ const path = require('path');
 const { app, ipcMain } = require('electron');
 
 const ONBOARDING_STATE_FILE = 'onboarding-state.json';
+const ONBOARDING_VERSION = 2;
 
 function onboardingStatePath() {
   return path.join(app.getPath('userData'), ONBOARDING_STATE_FILE);
@@ -11,7 +12,10 @@ function onboardingStatePath() {
 function readOnboardingComplete() {
   try {
     const state = JSON.parse(fs.readFileSync(onboardingStatePath(), 'utf8'));
-    return state?.onboardingComplete === true;
+    return (
+      state?.onboardingComplete === true &&
+      Number(state?.onboardingVersion || 0) >= ONBOARDING_VERSION
+    );
   } catch {
     return false;
   }
@@ -23,7 +27,14 @@ function writeOnboardingComplete() {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(
     temporaryTarget,
-    JSON.stringify({ onboardingComplete: true }, null, 2),
+    JSON.stringify(
+      {
+        onboardingComplete: true,
+        onboardingVersion: ONBOARDING_VERSION,
+      },
+      null,
+      2,
+    ),
     'utf8',
   );
   fs.renameSync(temporaryTarget, target);
