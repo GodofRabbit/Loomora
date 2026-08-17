@@ -10,7 +10,10 @@ const {
   destroyWorker: destroyOcrWorker,
   registerOcrHandlers,
 } = require('./electron/ocr');
-const APP_ICON_PATH = path.join(__dirname, 'renderer', 'assets', 'logo.png');
+const APP_ICON_PATH =
+  process.platform === 'win32'
+    ? path.join(__dirname, 'build', 'icon-system.ico')
+    : path.join(__dirname, 'renderer', 'assets', 'logo-system.png');
 let applicationIcon;
 let mainWindow;
 

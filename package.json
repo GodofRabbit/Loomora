@@ -40,15 +40,16 @@
       "main.js",
       "preload.js",
       "electron/**/*",
-      "renderer/assets/logo.png",
+      "renderer/assets/logo-system.png",
+      "build/icon-system.ico",
       "renderer-dist/**/*"
     ],
     "win": {
-      "icon": "build/icon.ico",
+      "icon": "build/icon-system.ico",
       "target": "nsis"
     },
     "mac": {
-      "icon": "build/icon.icns",
+      "icon": "build/icon-system.icns",
       "target": "dmg",
       "category": "public.app-category.graphics-design"
     }
