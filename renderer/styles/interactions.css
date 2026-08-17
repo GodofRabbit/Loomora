@@ -30,8 +30,6 @@ button:hover:not(:disabled) {
 }
 .prompt-box textarea {
   min-height: 118px;
-  scrollbar-width: thin;
-  scrollbar-color: #8063c8 transparent;
 }
 .control-row input,
 .control-row select,

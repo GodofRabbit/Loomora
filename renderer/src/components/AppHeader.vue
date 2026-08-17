@@ -10,6 +10,7 @@ defineEmits(['home', 'create', 'gallery', 'inspiration', 'settings', 'about']);
     <button
       type="button"
       class="brand"
+      data-onboarding="home"
       title="返回新创作"
       aria-label="返回新创作"
       @click="$emit('home')"
@@ -20,10 +21,14 @@ defineEmits(['home', 'create', 'gallery', 'inspiration', 'settings', 'about']);
       <a :class="{ active: activeView === 'create' }" @click="$emit('create')"
         >AI 创作</a
       >
-      <a :class="{ active: activeView === 'gallery' }" @click="$emit('gallery')"
+      <a
+        data-onboarding="gallery"
+        :class="{ active: activeView === 'gallery' }"
+        @click="$emit('gallery')"
         >作品库</a
       >
       <a
+        data-onboarding="inspiration"
         :class="{ active: activeView === 'inspiration' }"
         @click="$emit('inspiration')"
         >灵感广场</a
@@ -44,6 +49,7 @@ defineEmits(['home', 'create', 'gallery', 'inspiration', 'settings', 'about']);
         class="config-btn"
         title="打开设置"
         aria-label="打开设置"
+        data-onboarding="settings"
         @click="$emit('settings')"
       >
         <Settings aria-hidden="true" />

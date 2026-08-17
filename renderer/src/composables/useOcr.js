@@ -9,6 +9,15 @@ export function useOcr(showToast) {
   const sourceName = ref('');
   let runId = 0;
 
+  function resetState() {
+    runId += 1;
+    open.value = false;
+    busy.value = false;
+    lines.value = [];
+    error.value = '';
+    sourceName.value = '';
+  }
+
   async function resolveImageSource(source) {
     if (typeof source !== 'string' || !source.startsWith('loomora-gallery:')) {
       return source;
@@ -75,17 +84,18 @@ export function useOcr(showToast) {
 
   function cancel() {
     const wasBusy = busy.value;
-    runId += 1;
-    open.value = false;
-    busy.value = false;
-    lines.value = [];
-    error.value = '';
+    resetState();
     window.forge.cancelOcr().catch(() => {});
     if (wasBusy) showToast('已取消本次文字识别');
   }
 
   function close() {
-    cancel();
+    if (busy.value) {
+      cancel();
+      return;
+    }
+    // Keep the initialized local model alive so the next recognition starts immediately.
+    resetState();
   }
 
   return {

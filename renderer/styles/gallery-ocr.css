@@ -11,7 +11,7 @@
   right: 0;
   bottom: 0;
   display: grid;
-  width: min(430px, 92vw);
+  width: min(400px, 92vw);
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   border-left: 1px solid rgba(154, 104, 255, 0.28);
@@ -27,8 +27,8 @@
 }
 .ocr-result-panel header {
   display: flex;
-  min-height: 66px;
-  padding: 0 16px 0 20px;
+  min-height: 58px;
+  padding: 0 14px 0 18px;
   border-bottom: 1px solid rgba(151, 110, 255, 0.18);
   align-items: center;
   justify-content: space-between;
@@ -38,19 +38,19 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
 }
 .ocr-result-heading > div {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 .ocr-result-heading-icon {
   display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   border: 1px solid rgba(175, 132, 255, 0.38);
   border-radius: 8px;
   place-items: center;
@@ -62,25 +62,27 @@
   height: 18px;
 }
 .ocr-result-panel header b {
-  font-size: 16px;
+  font-size: 14px;
+  line-height: 1.4;
 }
 .ocr-result-heading > div span {
   overflow: hidden;
   color: #9299a5;
-  font-size: 12px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .ocr-result-panel header button {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: #afb4bd;
-  font-size: 24px;
+  place-items: center;
 }
 .ocr-result-panel header button:hover {
   background: rgba(108, 76, 156, 0.26);
@@ -97,16 +99,16 @@
   scrollbar-width: thin;
 }
 .ocr-lines {
-  padding: 14px 20px 28px;
+  padding: 10px 18px 22px;
   user-select: text;
 }
 .ocr-lines p {
   margin: 0;
-  padding: 9px 0;
+  padding: 6px 0;
   border-bottom: 1px solid rgba(151, 110, 255, 0.13);
   color: #e9ebef;
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 13px;
+  line-height: 1.6;
   overflow-wrap: anywhere;
   cursor: text;
 }
@@ -114,7 +116,7 @@
   display: flex;
   height: 100%;
   min-height: 280px;
-  padding: 32px;
+  padding: 28px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
@@ -138,11 +140,12 @@
 }
 .ocr-result-state b {
   color: #e5e8eb;
-  font-size: 15px;
+  font-size: 14px;
 }
 .ocr-result-state small {
   max-width: 250px;
   color: #9890a5;
+  font-size: 12px;
   line-height: 1.6;
 }
 .ocr-result-state.ocr-error {
@@ -162,8 +165,8 @@
 }
 .ocr-result-panel footer {
   display: flex;
-  min-height: 62px;
-  padding: 0 16px 0 20px;
+  min-height: 56px;
+  padding: 0 14px 0 18px;
   border-top: 1px solid rgba(151, 110, 255, 0.18);
   align-items: center;
   justify-content: space-between;

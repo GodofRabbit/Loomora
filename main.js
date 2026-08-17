@@ -9,6 +9,7 @@ const { registerGenerationHandler } = require('./electron/generation');
 const {
   destroyWorker: destroyOcrWorker,
   registerOcrHandlers,
+  warmupOcr,
 } = require('./electron/ocr');
 const APP_ICON_PATH =
   process.platform === 'win32'
@@ -56,6 +57,9 @@ function createWindow() {
   process.env.VITE_DEV_SERVER_URL
     ? window.loadURL(process.env.VITE_DEV_SERVER_URL)
     : window.loadFile(path.join(__dirname, 'renderer-dist', 'index.html'));
+  window.webContents.once('did-finish-load', () => {
+    setTimeout(() => warmupOcr(), 1200);
+  });
 }
 
 registerGalleryScheme();

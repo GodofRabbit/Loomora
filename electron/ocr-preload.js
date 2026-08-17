@@ -9,5 +9,8 @@ contextBridge.exposeInMainWorld('ocrWorker', {
       callback(payload),
     );
   },
+  onWarmup: (callback) => {
+    ipcRenderer.on('ocr-worker-warmup', () => callback());
+  },
   sendResult: (payload) => ipcRenderer.send('ocr-worker-result', payload),
 });

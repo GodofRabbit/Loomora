@@ -72,8 +72,10 @@ const scrollbarVisible = ref(false);
 const editorModal = ref(null);
 const composerCollapseSignal = ref(0);
 const composerExpandSignal = ref(0);
+const composerRevealSignal = ref(0);
 const conversationAwayFromBottom = ref(false);
 const conversationScrollBottomSignal = ref(0);
+const conversationFollowBottomSignal = ref(0);
 const creationHistoryVisible = ref(false);
 let toastTimer;
 let scrollResizeObserver;
@@ -289,7 +291,6 @@ function updateConversationScrollState(state) {
   ) {
     return;
   }
-  const wasAwayFromBottom = conversationAwayFromBottom.value;
   conversationAwayFromBottom.value = nextAwayFromBottom;
   if (nextAwayFromBottom) {
     return;
@@ -297,27 +298,21 @@ function updateConversationScrollState(state) {
   if (view.value === 'create' && composerCollapseRequested) {
     composerCollapseRequested = false;
     if (userScrolledTowardBottom) {
-      composerCollapseLockUntil = Date.now() + 760;
-      composerExpandSignal.value += 1;
+      composerCollapseLockUntil = Date.now() + 820;
+      composerRevealSignal.value += 1;
+      nextTick(() => {
+        window.requestAnimationFrame(() => {
+          conversationFollowBottomSignal.value += 1;
+        });
+      });
     }
-    return;
-  }
-  if (
-    view.value === 'create' &&
-    wasAwayFromBottom &&
-    userScrolledTowardBottom
-  ) {
-    composerCollapseLockUntil = Date.now() + 760;
-    composerExpandSignal.value += 1;
   }
 }
 
 function scrollConversationToBottom() {
-  conversationAwayFromBottom.value = false;
   composerCollapseRequested = false;
   composerCollapseLockUntil = Date.now() + 820;
   conversationScrollBottomSignal.value += 1;
-  composerExpandSignal.value += 1;
 }
 
 function startScrollDrag(event) {
@@ -1372,7 +1367,10 @@ function finishOnboarding() {
 
 function showOnboardingFromAbout() {
   aboutOpen.value = false;
-  onboardingOpen.value = true;
+  returnToCreationStart();
+  nextTick(() => {
+    onboardingOpen.value = true;
+  });
 }
 
 function recognizePreview() {
@@ -1589,6 +1587,7 @@ onBeforeUnmount(() => {
           "
           :collapse-signal="composerCollapseSignal"
           :expand-signal="composerExpandSignal"
+          :reveal-signal="composerRevealSignal"
           @pick-reference="form.pickReference"
           @remove-reference="form.removeReference"
           @preview-reference="openReferencePreview"
@@ -1609,6 +1608,7 @@ onBeforeUnmount(() => {
               :conversation-has-older="conversationHasOlder"
               :conversation-has-newer="conversationHasNewer"
               :scroll-bottom-signal="conversationScrollBottomSignal"
+              :follow-bottom-signal="conversationFollowBottomSignal"
               :images="images"
               :image-paths="imagePaths"
               :live-image="liveImage"

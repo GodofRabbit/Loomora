@@ -98,6 +98,17 @@ async function recognizeText(payload) {
   });
 }
 
+async function warmupOcr() {
+  const window = createWorkerWindow();
+  try {
+    await workerReady;
+    if (!window.isDestroyed()) window.webContents.send('ocr-worker-warmup');
+  } catch (error) {
+    destroyWorker('文字识别预热失败');
+    console.error('文字识别预热失败', error);
+  }
+}
+
 function registerOcrHandlers() {
   ipcMain.on('ocr-worker-ready', (event) => {
     if (event.sender !== workerWindow?.webContents) return;
@@ -125,4 +136,4 @@ function registerOcrHandlers() {
   });
 }
 
-module.exports = { destroyWorker, registerOcrHandlers };
+module.exports = { destroyWorker, registerOcrHandlers, warmupOcr };

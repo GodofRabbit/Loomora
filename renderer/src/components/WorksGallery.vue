@@ -24,9 +24,8 @@ import {
   Upload,
   X,
 } from 'lucide-vue-next';
-import aiAvatar from '../../assets/avatars/ai-avatar-v2.svg';
-import userAvatar from '../../assets/avatars/user-avatar-v2.svg';
-import startArtwork from '../../assets/inspiration/gptimage-vinyl-landscape.png';
+import aiAvatar from '../../assets/avatars/ai-avatar.svg';
+import userAvatar from '../../assets/avatars/user-avatar.png';
 
 const props = defineProps({
   view: { type: String, required: true },
@@ -39,6 +38,7 @@ const props = defineProps({
   conversationHasOlder: Boolean,
   conversationHasNewer: Boolean,
   scrollBottomSignal: { type: Number, default: 0 },
+  followBottomSignal: { type: Number, default: 0 },
   images: { type: Array, required: true },
   imagePaths: { type: Array, required: true },
   liveImage: { type: String, default: '' },
@@ -102,9 +102,11 @@ let suppressConversationTimer;
 let scrollSettleTimer;
 let pageRestoreTimer;
 let pageLoadFrame;
+let followBottomFrame;
 let galleryVirtualFrame;
 let galleryCardObserver;
 let pendingConversationLoad = null;
+let scrollBottomRequested = false;
 let conversationLoadStartedAt = 0;
 let lastConversationScrollTop = 0;
 let galleryScrollRoot;
@@ -488,6 +490,7 @@ function clearScrollSettleTimers() {
   window.clearTimeout(scrollSettleTimer);
   window.clearTimeout(pageRestoreTimer);
   window.cancelAnimationFrame(pageLoadFrame);
+  window.cancelAnimationFrame(followBottomFrame);
 }
 
 function updateGalleryStickyState() {
@@ -545,6 +548,71 @@ function scrollConversationToBottom({ smooth = false } = {}) {
       setConversationAwayFromBottom(measureConversationAwayFromBottom());
     }, settleDelay);
   });
+}
+
+function followConversationBottomDuringTransition() {
+  const element = generationChat.value;
+  if (!element || props.view !== 'create' || !props.active) return;
+
+  nextTick(() => {
+    clearScrollSettleTimers();
+    suppressConversationScroll.value = true;
+    const startedAt = performance.now();
+
+    const follow = (now) => {
+      element.scrollTop = element.scrollHeight;
+      if (now - startedAt < 380) {
+        followBottomFrame = window.requestAnimationFrame(follow);
+        return;
+      }
+
+      followBottomFrame = undefined;
+      lastConversationScrollTop = element.scrollTop;
+      suppressConversationScroll.value = false;
+      setConversationAwayFromBottom(measureConversationAwayFromBottom());
+    };
+
+    followBottomFrame = window.requestAnimationFrame(follow);
+  });
+}
+
+function flushScrollBottomRequest() {
+  if (
+    !scrollBottomRequested ||
+    props.view !== 'create' ||
+    !props.active ||
+    props.conversationLoading ||
+    pendingConversationLoad
+  ) {
+    return;
+  }
+  scrollBottomRequested = false;
+  if (props.conversationOffset > 0) {
+    pendingConversationLoad = {
+      direction: 'latest',
+      windowKey: conversationWindowKey(),
+      anchor: null,
+    };
+    conversationLoadDirection.value = 'latest';
+    conversationLoadStartedAt = performance.now();
+    suppressConversationScroll.value = true;
+    nextTick(() => {
+      pageLoadFrame = window.requestAnimationFrame(() => {
+        if (pendingConversationLoad?.direction === 'latest') {
+          if (props.conversationLoading) {
+            pendingConversationLoad = null;
+            conversationLoadDirection.value = '';
+            suppressConversationScroll.value = false;
+            scrollBottomRequested = true;
+            return;
+          }
+          emit('load-latest-conversations');
+        }
+      });
+    });
+    return;
+  }
+  scrollConversationToBottom({ smooth: true });
 }
 
 function onCreationStateEntered() {
@@ -623,6 +691,7 @@ function restoreConversationWindow() {
         conversationLoadDirection.value = '';
         suppressConversationScroll.value = false;
         setConversationAwayFromBottom(measureConversationAwayFromBottom());
+        if (scrollBottomRequested) nextTick(flushScrollBottomRequest);
       });
     };
     const loadingElapsed = performance.now() - conversationLoadStartedAt;
@@ -717,6 +786,9 @@ watch(
   ],
   () => {
     restoreConversationWindow();
+    if (!props.conversationLoading && !pendingConversationLoad) {
+      nextTick(flushScrollBottomRequest);
+    }
   },
 );
 
@@ -750,26 +822,16 @@ watch(
 watch(
   () => props.scrollBottomSignal,
   () => {
-    if (props.conversationOffset > 0) {
-      if (props.conversationLoading || pendingConversationLoad) return;
-      pendingConversationLoad = {
-        direction: 'latest',
-        windowKey: conversationWindowKey(),
-        anchor: null,
-      };
-      conversationLoadDirection.value = 'latest';
-      conversationLoadStartedAt = performance.now();
-      suppressConversationScroll.value = true;
-      nextTick(() => {
-        pageLoadFrame = window.requestAnimationFrame(() => {
-          if (pendingConversationLoad?.direction === 'latest') {
-            emit('load-latest-conversations');
-          }
-        });
-      });
-      return;
-    }
-    scrollConversationToBottom({ smooth: true });
+    if (props.view !== 'create' || !props.active) return;
+    scrollBottomRequested = true;
+    flushScrollBottomRequest();
+  },
+);
+
+watch(
+  () => props.followBottomSignal,
+  () => {
+    followConversationBottomDuringTransition();
   },
 );
 
@@ -992,19 +1054,20 @@ onBeforeUnmount(() => {
           class="creation-state creation-state-start"
         >
           <div class="creation-start">
-            <div class="creation-start-art" aria-hidden="true">
-              <img :src="startArtwork" alt="" />
-            </div>
-            <div class="creation-start-copy">
-              <span class="creation-start-english"
-                >loom light into images.</span
-              >
+            <div
+              class="creation-start-copy"
+              data-onboarding-fallback="conversation"
+            >
               <h1>今天想创造什么？</h1>
+              <span class="creation-start-divider" aria-hidden="true"
+                >&#10022;</span
+              >
               <p>灵感落笔处，光芒渐次生</p>
               <button
                 v-if="conversationStartMode && conversationTotal"
                 type="button"
                 class="creation-history-button"
+                data-onboarding="conversation"
                 title="查看本地保存的创作对话"
                 @click="emit('show-conversation-history')"
               >

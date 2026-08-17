@@ -90,4 +90,11 @@ window.ocrWorker.onRecognize(async ({ id, source }) => {
   }
 });
 
+window.ocrWorker.onWarmup(() => {
+  // Load and compile the local model while the main UI is idle.
+  ensureReady().catch((error) => {
+    console.error('PaddleOCR 模型预热失败', error);
+  });
+});
+
 window.ocrWorker.ready();

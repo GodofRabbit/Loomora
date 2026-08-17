@@ -36,6 +36,7 @@ const props = defineProps({
   startMode: Boolean,
   collapseSignal: { type: Number, default: 0 },
   expandSignal: { type: Number, default: 0 },
+  revealSignal: { type: Number, default: 0 },
   showBottomButton: Boolean,
 });
 const composerFocused = ref(false);
@@ -78,6 +79,11 @@ function onComposerFocusOut(event) {
   setComposerFocused(false);
 }
 
+function onComposerFocusIn(event) {
+  if (event.target?.closest?.('.conversation-bottom-button')) return;
+  setComposerFocused(true);
+}
+
 function collapseComposer() {
   setComposerFocused(false);
   const activeElement = document.activeElement;
@@ -101,6 +107,13 @@ watch(
     promptInput.value?.focus({ preventScroll: true });
   },
 );
+
+watch(
+  () => props.revealSignal,
+  () => {
+    setComposerFocused(true);
+  },
+);
 </script>
 
 <template>
@@ -108,12 +121,13 @@ watch(
   <section
     ref="composerHost"
     class="create-card"
+    data-onboarding="composer"
     :class="{
       compact: compactComposer,
       'start-mode': startMode,
       'has-bottom-button': showBottomButton,
     }"
-    @focusin="setComposerFocused(true)"
+    @focusin="onComposerFocusIn"
     @focusout="onComposerFocusOut"
   >
     <div class="card-title">
