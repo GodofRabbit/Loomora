@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('forge', {
   platform: process.platform,
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+  getOnboardingComplete: () => ipcRenderer.invoke('get-onboarding-complete'),
+  setOnboardingComplete: () => ipcRenderer.invoke('set-onboarding-complete'),
   pickImage: () => ipcRenderer.invoke('pick-image'),
   generate: (p) => ipcRenderer.invoke('generate', p),
   cancelGenerate: () => ipcRenderer.invoke('cancel-generate'),

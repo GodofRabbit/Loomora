@@ -56,7 +56,8 @@
     },
     "nsis": {
       "differentialPackage": false,
-      "packElevateHelper": false
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     },
     "mac": {
       "icon": "build/icon-system.icns",

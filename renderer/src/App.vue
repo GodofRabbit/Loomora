@@ -1362,7 +1362,24 @@ async function copyAuthorEmail() {
 
 function finishOnboarding() {
   localStorage.setItem(ONBOARDING_STORAGE_KEY, '1');
+  Promise.resolve(window.forge?.setOnboardingComplete?.()).catch(() => {});
   onboardingOpen.value = false;
+}
+
+async function loadOnboardingState() {
+  const legacyCompleted = localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1';
+  if (legacyCompleted) {
+    onboardingOpen.value = false;
+    Promise.resolve(window.forge?.setOnboardingComplete?.()).catch(() => {});
+    return;
+  }
+
+  try {
+    const completed = await window.forge?.getOnboardingComplete?.();
+    onboardingOpen.value = completed !== true;
+  } catch {
+    onboardingOpen.value = true;
+  }
 }
 
 function showOnboardingFromAbout() {
@@ -1429,7 +1446,7 @@ onMounted(() => {
       if (result) appInfo.value = { ...appInfo.value, ...result };
     })
     .catch(() => {});
-  onboardingOpen.value = localStorage.getItem(ONBOARDING_STORAGE_KEY) !== '1';
+  loadOnboardingState();
   nextTick(updateScrollbar);
 });
 

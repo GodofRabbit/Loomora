@@ -6,6 +6,7 @@ const {
   registerGalleryScheme,
 } = require('./electron/gallery');
 const { registerGenerationHandler } = require('./electron/generation');
+const { registerPreferenceHandlers } = require('./electron/preferences');
 const {
   destroyWorker: destroyOcrWorker,
   registerOcrHandlers,
@@ -66,6 +67,7 @@ registerGalleryScheme();
 registerGalleryHandlers();
 registerGenerationHandler();
 registerOcrHandlers();
+registerPreferenceHandlers();
 ipcMain.handle('get-app-info', () => ({
   name: app.getName(),
   version: app.getVersion(),
