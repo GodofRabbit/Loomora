@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { Check, ChevronDown } from 'lucide-vue-next';
 
 const props = defineProps({
   modelValue: { type: String, required: true },
@@ -136,9 +137,7 @@ onBeforeUnmount(() => {
       @keydown="onTriggerKeydown"
     >
       <span>{{ selectedLabel }}</span>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="m7 10 5 5 5-5" />
-      </svg>
+      <ChevronDown aria-hidden="true" />
     </button>
     <Transition name="dropdown-panel">
       <div
@@ -161,13 +160,7 @@ onBeforeUnmount(() => {
           @keydown="onOptionKeydown($event, option)"
         >
           <span>{{ option.label }}</span>
-          <svg
-            v-if="option.value === modelValue"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path d="m5 12 4 4L19 6" />
-          </svg>
+          <Check v-if="option.value === modelValue" aria-hidden="true" />
         </button>
       </div>
     </Transition>

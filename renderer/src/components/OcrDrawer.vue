@@ -1,4 +1,6 @@
 <script setup>
+import { CircleAlert, Copy, ScanText, Square, X } from 'lucide-vue-next';
+
 defineProps({
   open: Boolean,
   busy: Boolean,
@@ -6,7 +8,7 @@ defineProps({
   error: { type: String, default: '' },
   sourceName: { type: String, default: '' },
 });
-defineEmits(['close', 'copy']);
+defineEmits(['cancel', 'close', 'copy']);
 </script>
 
 <template>
@@ -20,15 +22,20 @@ defineEmits(['close', 'copy']);
         @click.stop
       >
         <header>
-          <div>
-            <b>文字识别</b><span>{{ sourceName }}</span>
+          <div class="ocr-result-heading">
+            <span class="ocr-result-heading-icon"
+              ><ScanText aria-hidden="true"
+            /></span>
+            <div>
+              <b>文字识别</b><span>{{ sourceName }}</span>
+            </div>
           </div>
           <button
-            title="关闭识别结果"
-            aria-label="关闭识别结果"
+            :title="busy ? '关闭并取消识别' : '关闭识别结果'"
+            :aria-label="busy ? '关闭并取消识别' : '关闭识别结果'"
             @click="$emit('close')"
           >
-            ×
+            <X aria-hidden="true" />
           </button>
         </header>
         <div class="ocr-result-body">
@@ -37,10 +44,11 @@ defineEmits(['close', 'copy']);
             ><small>首次使用需要加载本地识别模型</small>
           </div>
           <div v-else-if="error" class="ocr-result-state ocr-error">
-            <span>!</span><b>识别失败</b><small>{{ error }}</small>
+            <span><CircleAlert aria-hidden="true" /></span><b>识别失败</b
+            ><small>{{ error }}</small>
           </div>
           <div v-else-if="!lines.length" class="ocr-result-state">
-            <span>文</span><b>未识别到文字</b
+            <span><ScanText aria-hidden="true" /></span><b>未识别到文字</b
             ><small>可尝试使用更清晰、文字方向更端正的图片</small>
           </div>
           <div v-else class="ocr-lines">
@@ -50,10 +58,19 @@ defineEmits(['close', 'copy']);
           </div>
         </div>
         <footer>
-          <span v-if="lines.length">已识别 {{ lines.length }} 段文字</span
-          ><span v-else></span>
-          <button :disabled="!lines.length" @click="$emit('copy')">
-            复制全部
+          <span v-if="busy">识别过程在本机完成</span>
+          <span v-else-if="lines.length">已识别 {{ lines.length }} 段文字</span>
+          <span v-else></span>
+          <button
+            v-if="busy"
+            class="ocr-cancel-button"
+            title="取消本次文字识别"
+            @click="$emit('cancel')"
+          >
+            <Square aria-hidden="true" />取消识别
+          </button>
+          <button v-else :disabled="!lines.length" @click="$emit('copy')">
+            <Copy aria-hidden="true" />复制全部
           </button>
         </footer>
       </aside>

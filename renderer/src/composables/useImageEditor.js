@@ -1,4 +1,4 @@
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import { editorLocale } from '../config/editorLocale';
 import { formatUserMessage } from '../utils/userMessages';
 
@@ -27,13 +27,27 @@ export function useImageEditor({
   const saving = ref(false);
   const message = ref('');
   const mosaicActive = ref(false);
+  const mosaicApplying = ref(false);
   const mosaicSize = ref(28);
   const overlay = ref(null);
+  const resetting = ref(false);
   let imageEditor;
   let ImageEditorClass;
   let colorPickerObserver;
+  let originalImageSource = '';
+  let editorZoom = 1;
+  let wheelZoomFrame;
+  let wheelZoomDirection = 0;
+  let wheelZoomPoint = null;
+  let zoomCanvas;
+  let resetButton;
+  let resetButtonHandler;
   let mosaicPoints = [];
   let mosaicDrawing = false;
+  let mosaicBasePreview;
+  let mosaicPixelPreview;
+  let mosaicStrokePreview;
+  let mosaicPreviewFrame;
 
   function getCanvasRect() {
     const canvas = getHost()?.querySelector('.lower-canvas');
@@ -71,6 +85,194 @@ export function useImageEditor({
     clearOverlay();
   }
 
+  function waitForCanvasPaint() {
+    return new Promise((resolve) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+    });
+  }
+
+  function syncZoomLevel(event) {
+    editorZoom = Number(event?.zoomLevel) || 1;
+    window.requestAnimationFrame(updateOverlay);
+  }
+
+  function applyWheelZoom() {
+    wheelZoomFrame = undefined;
+    if (!imageEditor || !wheelZoomPoint || !wheelZoomDirection) return;
+    const nextZoom = Math.min(
+      5,
+      Math.max(1, Number((editorZoom + wheelZoomDirection * 0.2).toFixed(2))),
+    );
+    wheelZoomDirection = 0;
+    if (nextZoom === editorZoom) return;
+    if (nextZoom === 1) imageEditor.resetZoom();
+    else imageEditor.zoom({ ...wheelZoomPoint, zoomLevel: nextZoom });
+    editorZoom = nextZoom;
+    window.requestAnimationFrame(updateOverlay);
+  }
+
+  function handleCanvasWheel(event) {
+    const target = event.target;
+    if (
+      !(target instanceof Element) ||
+      !target.matches('.upper-canvas, .lower-canvas, .mosaic-overlay')
+    ) {
+      return;
+    }
+    const canvas = getHost()?.querySelector('.upper-canvas');
+    const rect = canvas?.getBoundingClientRect();
+    if (!canvas || !rect?.width || !rect?.height) return;
+    if (!event.deltaY) return;
+    event.preventDefault();
+    wheelZoomDirection = event.deltaY < 0 ? 1 : -1;
+    wheelZoomPoint = {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+    if (!wheelZoomFrame) {
+      wheelZoomFrame = window.requestAnimationFrame(applyWheelZoom);
+    }
+  }
+
+  async function resetEditor() {
+    if (!imageEditor || resetting.value) return;
+    resetting.value = true;
+    message.value = '正在恢复原图...';
+    setMosaicActive(false);
+    clearMosaicPreview();
+    clearOverlay();
+    try {
+      imageEditor.resetZoom();
+      const undoCount = Math.max(
+        0,
+        Number(imageEditor._invoker?._undoStack?.length) || 0,
+      );
+      if (undoCount) await imageEditor.undo(undoCount);
+      imageEditor.clearUndoStack();
+      imageEditor.clearRedoStack();
+      imageEditor._initHistory();
+      imageEditor.ui.resizeEditor({ imageSize: imageEditor.getCanvasSize() });
+      editorZoom = 1;
+      await waitForCanvasPaint();
+      updateOverlay();
+      message.value = '';
+    } catch (error) {
+      message.value = formatUserMessage(error, '恢复原图失败，请稍后重试');
+    } finally {
+      resetting.value = false;
+    }
+  }
+
+  function customizeHelpTools() {
+    const host = getHost();
+    const ui = imageEditor?.ui;
+    if (!host || !ui) return;
+
+    resetButton =
+      ui._buttonElements?.reset || host.querySelector('.tie-btn-reset');
+    if (resetButton) {
+      resetButtonHandler = (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        resetEditor();
+      };
+      resetButton.addEventListener('click', resetButtonHandler, true);
+      resetButton.setAttribute('aria-label', '恢复原图');
+      resetButton.setAttribute('tooltip-content', '恢复原图');
+    }
+
+    const deleteButton = ui._buttonElements?.delete;
+    deleteButton?.setAttribute('aria-label', '删除选中元素');
+    deleteButton?.setAttribute('tooltip-content', '删除选中元素');
+
+    const deleteAllButton = ui._buttonElements?.deleteAll;
+    if (deleteAllButton && ui.eventHandler?.deleteAll) {
+      deleteAllButton.removeEventListener('click', ui.eventHandler.deleteAll);
+    }
+    deleteAllButton?.remove();
+
+    const hostElement = getHost();
+    hostElement?.addEventListener('wheel', handleCanvasWheel, {
+      passive: false,
+      capture: true,
+    });
+    zoomCanvas = imageEditor?._graphics?.getCanvas?.();
+    zoomCanvas?.on?.('zoomChanged', syncZoomLevel);
+  }
+
+  function removeEditorListeners() {
+    getHost()?.removeEventListener('wheel', handleCanvasWheel, true);
+    zoomCanvas?.off?.('zoomChanged', syncZoomLevel);
+    zoomCanvas = undefined;
+    if (resetButton && resetButtonHandler) {
+      resetButton.removeEventListener('click', resetButtonHandler, true);
+    }
+    resetButton = undefined;
+    resetButtonHandler = undefined;
+    window.cancelAnimationFrame(wheelZoomFrame);
+    wheelZoomFrame = undefined;
+    wheelZoomDirection = 0;
+    wheelZoomPoint = null;
+    editorZoom = 1;
+  }
+
+  function clearMosaicPreview() {
+    window.cancelAnimationFrame(mosaicPreviewFrame);
+    mosaicPreviewFrame = undefined;
+    mosaicBasePreview = undefined;
+    mosaicPixelPreview = undefined;
+    mosaicStrokePreview = undefined;
+  }
+
+  function prepareMosaicPreview() {
+    const canvas = overlay.value;
+    const sourceCanvas = getHost()?.querySelector('.lower-canvas');
+    if (!canvas || !sourceCanvas || !canvas.width || !canvas.height) return;
+
+    const createPreviewCanvas = () => {
+      const preview = document.createElement('canvas');
+      preview.width = canvas.width;
+      preview.height = canvas.height;
+      return preview;
+    };
+
+    mosaicBasePreview = createPreviewCanvas();
+    mosaicBasePreview
+      .getContext('2d')
+      .drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+
+    const ratio = window.devicePixelRatio || 1;
+    const block = Math.max(4, Math.round((mosaicSize.value * ratio) / 4.4));
+    const sample = document.createElement('canvas');
+    sample.width = Math.max(1, Math.ceil(canvas.width / block));
+    sample.height = Math.max(1, Math.ceil(canvas.height / block));
+    const sampleContext = sample.getContext('2d');
+    sampleContext.imageSmoothingEnabled = true;
+    sampleContext.drawImage(
+      mosaicBasePreview,
+      0,
+      0,
+      sample.width,
+      sample.height,
+    );
+
+    mosaicPixelPreview = createPreviewCanvas();
+    const pixelContext = mosaicPixelPreview.getContext('2d');
+    pixelContext.imageSmoothingEnabled = false;
+    pixelContext.drawImage(
+      sample,
+      0,
+      0,
+      sample.width,
+      sample.height,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
+    mosaicStrokePreview = createPreviewCanvas();
+  }
+
   function addPoint(event) {
     const rect = overlay.value?.getBoundingClientRect();
     if (!rect) return;
@@ -78,33 +280,67 @@ export function useImageEditor({
       x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
       y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
     });
-    drawPreview();
+    if (mosaicPreviewFrame) return;
+    mosaicPreviewFrame = window.requestAnimationFrame(() => {
+      mosaicPreviewFrame = undefined;
+      drawPreview();
+    });
   }
 
-  function drawPreview() {
+  function drawPreview(includeBase = false) {
     const canvas = overlay.value;
-    if (!canvas || !mosaicPoints.length) return;
-    const context = canvas.getContext('2d');
-    context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-    context.beginPath();
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.lineWidth = mosaicSize.value;
-    context.strokeStyle = 'rgba(166, 120, 255, 0.42)';
-    context.moveTo(mosaicPoints[0].x, mosaicPoints[0].y);
-    for (const point of mosaicPoints.slice(1)) context.lineTo(point.x, point.y);
-    context.stroke();
+    if (
+      !canvas ||
+      !mosaicStrokePreview ||
+      !mosaicPixelPreview ||
+      !mosaicPoints.length
+    ) {
+      return;
+    }
+    const ratio = window.devicePixelRatio || 1;
+    const strokeContext = mosaicStrokePreview.getContext('2d');
+    strokeContext.setTransform(1, 0, 0, 1, 0, 0);
+    strokeContext.clearRect(
+      0,
+      0,
+      mosaicStrokePreview.width,
+      mosaicStrokePreview.height,
+    );
+    strokeContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+    strokeContext.beginPath();
+    strokeContext.lineCap = 'round';
+    strokeContext.lineJoin = 'round';
+    strokeContext.lineWidth = mosaicSize.value;
+    strokeContext.strokeStyle = '#fff';
+    strokeContext.moveTo(mosaicPoints[0].x, mosaicPoints[0].y);
+    for (const point of mosaicPoints.slice(1)) {
+      strokeContext.lineTo(point.x, point.y);
+    }
+    strokeContext.stroke();
     const last = mosaicPoints[mosaicPoints.length - 1];
-    context.beginPath();
-    context.arc(last.x, last.y, mosaicSize.value / 2, 0, Math.PI * 2);
-    context.fillStyle = 'rgba(181, 143, 255, 0.25)';
-    context.fill();
+    strokeContext.beginPath();
+    strokeContext.arc(last.x, last.y, mosaicSize.value / 2, 0, Math.PI * 2);
+    strokeContext.fillStyle = '#fff';
+    strokeContext.fill();
+    strokeContext.setTransform(1, 0, 0, 1, 0, 0);
+    strokeContext.globalCompositeOperation = 'source-in';
+    strokeContext.drawImage(mosaicPixelPreview, 0, 0);
+    strokeContext.globalCompositeOperation = 'source-over';
+
+    const context = canvas.getContext('2d');
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (includeBase && mosaicBasePreview) {
+      context.drawImage(mosaicBasePreview, 0, 0);
+    }
+    context.drawImage(mosaicStrokePreview, 0, 0);
   }
 
   function startStroke(event) {
-    if (!mosaicActive.value || saving.value) return;
+    if (!mosaicActive.value || mosaicApplying.value || saving.value) return;
     mosaicDrawing = true;
     mosaicPoints = [];
+    prepareMosaicPreview();
     overlay.value?.setPointerCapture?.(event.pointerId);
     addPoint(event);
   }
@@ -200,22 +436,35 @@ export function useImageEditor({
       canvas.toDataURL('image/png'),
       source.value.name,
     );
+    await new Promise((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(resolve);
+      });
+    });
     addMosaicHistoryEntry();
     mosaicPoints = [];
     clearOverlay();
+    clearMosaicPreview();
     updateOverlay();
   }
 
   async function finishStroke(event) {
     if (!mosaicDrawing) return;
     mosaicDrawing = false;
+    mosaicApplying.value = true;
     overlay.value?.releasePointerCapture?.(event.pointerId);
+    window.cancelAnimationFrame(mosaicPreviewFrame);
+    mosaicPreviewFrame = undefined;
+    drawPreview(true);
     try {
       await applyStroke();
     } catch (error) {
       message.value = formatUserMessage(error, '马赛克处理失败，请稍后重试');
       mosaicPoints = [];
       clearOverlay();
+      clearMosaicPreview();
+    } finally {
+      mosaicApplying.value = false;
     }
   }
 
@@ -388,6 +637,9 @@ export function useImageEditor({
     open.value = true;
     await nextTick();
     try {
+      originalImageSource = await window.forge
+        .readGalleryImage(item.filePath)
+        .catch(() => item.src);
       if (!ImageEditorClass) {
         const module = await import('tui-image-editor');
         ImageEditorClass = module.default || module;
@@ -396,7 +648,7 @@ export function useImageEditor({
       const availableCanvasHeight = Math.max(180, host.clientHeight - 56 - 150);
       imageEditor = new ImageEditorClass(getHost(), {
         includeUI: {
-          loadImage: { path: source.value.src, name: source.value.name },
+          loadImage: { path: originalImageSource, name: source.value.name },
           locale: editorLocale,
           menu: [
             'crop',
@@ -420,6 +672,7 @@ export function useImageEditor({
       exposeDetailedColorPickers();
       createOverlay();
       mountMosaicTools();
+      customizeHelpTools();
       updateOverlay();
     } catch (error) {
       status.value = formatUserMessage(error, '图片编辑器加载失败，请稍后重试');
@@ -428,16 +681,22 @@ export function useImageEditor({
   }
 
   function close(force = false) {
-    if (saving.value && !force) return;
+    if ((saving.value || mosaicApplying.value || resetting.value) && !force)
+      return;
+    removeEditorListeners();
     imageEditor?.destroy();
     imageEditor = undefined;
     colorPickerObserver?.disconnect();
     colorPickerObserver = undefined;
     overlay.value?.remove();
     overlay.value = null;
+    clearMosaicPreview();
     mosaicActive.value = false;
     mosaicPoints = [];
     mosaicDrawing = false;
+    mosaicApplying.value = false;
+    resetting.value = false;
+    originalImageSource = '';
     open.value = false;
     source.value = null;
     message.value = '';
@@ -475,6 +734,7 @@ export function useImageEditor({
   }
 
   function destroy() {
+    removeEditorListeners();
     imageEditor?.destroy();
     imageEditor = undefined;
   }
@@ -483,6 +743,9 @@ export function useImageEditor({
     source,
     open,
     saving,
+    processing: computed(
+      () => saving.value || mosaicApplying.value || resetting.value,
+    ),
     message,
     updateOverlay,
     openEditor,

@@ -1,4 +1,6 @@
 <script setup>
+import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next';
+
 defineProps({
   preview: { type: Object, required: true },
   currentItem: { type: Object, required: true },
@@ -8,11 +10,7 @@ defineEmits(['close', 'previous', 'next', 'recognize', 'edit', 'context-menu']);
 </script>
 
 <template>
-  <div
-    class="lightbox"
-    role="dialog"
-    aria-modal="true"
-  >
+  <div class="lightbox" role="dialog" aria-modal="true">
     <div class="lightbox-actions">
       <button
         class="lightbox-ocr"
@@ -37,7 +35,7 @@ defineEmits(['close', 'previous', 'next', 'recognize', 'edit', 'context-menu']);
       title="上一张"
       @click="$emit('previous')"
     >
-      ‹
+      <ChevronLeft aria-hidden="true" />
     </button>
     <button
       v-if="preview.items.length > 1"
@@ -45,7 +43,7 @@ defineEmits(['close', 'previous', 'next', 'recognize', 'edit', 'context-menu']);
       title="下一张"
       @click="$emit('next')"
     >
-      ›
+      <ChevronRight aria-hidden="true" />
     </button>
     <button
       class="lightbox-close"
@@ -53,7 +51,7 @@ defineEmits(['close', 'previous', 'next', 'recognize', 'edit', 'context-menu']);
       aria-label="关闭预览"
       @click="$emit('close')"
     >
-      ×
+      <X aria-hidden="true" />
     </button>
     <figure>
       <img

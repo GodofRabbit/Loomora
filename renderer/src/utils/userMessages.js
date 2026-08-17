@@ -1,10 +1,16 @@
 const CJK_PATTERN = /[\u3400-\u9fff]/;
 
 const ERROR_RULES = [
-  [/invalid api key|api key.*invalid|unauthorized|forbidden/i, 'API 密钥无效或权限不足'],
+  [
+    /invalid api key|api key.*invalid|unauthorized|forbidden/i,
+    'API 密钥无效或权限不足',
+  ],
   [/rate limit|too many requests/i, '请求过于频繁，请稍后重试'],
   [/timed? out|timeout/i, '请求超时，请稍后重试'],
-  [/failed to fetch|fetch failed|network|socket|dns|econnrefused|enotfound|econnreset/i, '网络连接异常，请检查网络后重试'],
+  [
+    /failed to fetch|fetch failed|network|socket|dns|econnrefused|enotfound|econnreset/i,
+    '网络连接异常，请检查网络后重试',
+  ],
   [/invalid url/i, '接口地址无效，请检查后重试'],
   [/model.*not found|unsupported model/i, '所选模型不可用'],
   [/content policy|policy violation/i, '提示词未通过安全检查'],

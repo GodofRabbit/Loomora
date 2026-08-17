@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from 'vue';
+import { LoaderCircle, Save, ScanText, X } from 'lucide-vue-next';
 
 defineProps({
   source: { type: Object, default: null },
   status: { type: String, default: '' },
   saving: Boolean,
+  processing: Boolean,
   ocrBusy: Boolean,
 });
 const emit = defineEmits(['recognize', 'close', 'save']);
@@ -28,16 +30,41 @@ defineExpose({ host });
       <span class="image-editor-status">{{ status }}</span>
       <div class="image-editor-actions">
         <button
-          :disabled="saving || ocrBusy"
+          class="image-editor-action-secondary"
+          :disabled="processing || ocrBusy"
           title="识别当前画面中的文字"
           @click="emit('recognize')"
         >
+          <LoaderCircle
+            v-if="ocrBusy"
+            class="image-editor-action-loading"
+            aria-hidden="true"
+          />
+          <ScanText v-else aria-hidden="true" />
           {{ ocrBusy ? '识别中...' : '文字识别' }}
         </button>
-        <button :disabled="saving" @click="emit('save')">
+        <button
+          class="image-editor-action-primary"
+          :disabled="processing"
+          title="将当前编辑结果另存为新图片"
+          @click="emit('save')"
+        >
+          <LoaderCircle
+            v-if="saving"
+            class="image-editor-action-loading"
+            aria-hidden="true"
+          />
+          <Save v-else aria-hidden="true" />
           {{ saving ? '保存中...' : '另存为新图' }}
         </button>
-        <button :disabled="saving" @click="emit('close')">取消</button>
+        <button
+          class="image-editor-action-ghost"
+          :disabled="processing"
+          title="关闭图片编辑器"
+          @click="emit('close')"
+        >
+          <X aria-hidden="true" />取消
+        </button>
       </div>
     </header>
     <div ref="host" class="image-editor-host"></div>

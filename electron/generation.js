@@ -22,10 +22,16 @@ const MODEL_ALIASES = {
 };
 
 const USER_ERROR_RULES = [
-  [/invalid api key|api key.*invalid|unauthorized|forbidden/i, 'API 密钥无效或权限不足'],
+  [
+    /invalid api key|api key.*invalid|unauthorized|forbidden/i,
+    'API 密钥无效或权限不足',
+  ],
   [/rate limit|too many requests/i, '请求过于频繁，请稍后重试'],
   [/timed? out|timeout/i, '请求超时，请稍后重试'],
-  [/failed to fetch|fetch failed|network|socket|dns|econnrefused|enotfound|econnreset/i, '网络连接异常，请检查网络后重试'],
+  [
+    /failed to fetch|fetch failed|network|socket|dns|econnrefused|enotfound|econnreset/i,
+    '网络连接异常，请检查网络后重试',
+  ],
   [/invalid url/i, '接口地址无效，请检查后重试'],
   [/model.*not found|unsupported model/i, '所选模型不可用'],
   [/content policy|policy violation/i, '提示词未通过安全检查'],
@@ -79,13 +85,9 @@ function imagesOf(data) {
     const nested = imagesOf(data.data);
     if (nested.length) return nested;
   }
-  return [
-    'url',
-    'image_url',
-    'b64_json',
-    'base64',
-    'partial_image_b64',
-  ].some((key) => data?.[key])
+  return ['url', 'image_url', 'b64_json', 'base64', 'partial_image_b64'].some(
+    (key) => data?.[key],
+  )
     ? [data]
     : [];
 }
@@ -333,7 +335,13 @@ async function consumeImageStream(
   throw new Error('接口流式响应未返回图片数据');
 }
 
-async function sendOpenAiRequest(payload, model, references, signal, options = {}) {
+async function sendOpenAiRequest(
+  payload,
+  model,
+  references,
+  signal,
+  options = {},
+) {
   const useEdit = references.length > 0;
   const base = endpointBase(payload.endpoint);
   const stream = Boolean(options.stream);
@@ -362,7 +370,10 @@ async function generateSingle(payload, event, signal) {
   if (!payload.prompt?.trim()) return { ok: false, error: '请输入提示词' };
   const model = normalizeModel(payload.model?.trim() || OPENAI_IMAGE_MODEL);
   if (payload.prompt.length > DEFAULT_PROMPT_LIMIT) {
-    return { ok: false, error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符` };
+    return {
+      ok: false,
+      error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符`,
+    };
   }
 
   const references = Array.isArray(payload.reference) ? payload.reference : [];
@@ -429,7 +440,10 @@ async function generateBatch(payload, total, event, signal) {
   if (!payload.prompt?.trim()) return { ok: false, error: '请输入提示词' };
   const model = normalizeModel(payload.model?.trim() || OPENAI_IMAGE_MODEL);
   if (payload.prompt.length > DEFAULT_PROMPT_LIMIT) {
-    return { ok: false, error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符` };
+    return {
+      ok: false,
+      error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符`,
+    };
   }
 
   const references = Array.isArray(payload.reference) ? payload.reference : [];
@@ -457,7 +471,9 @@ async function generateBatch(payload, total, event, signal) {
     const json = await responseJson(response, '图片接口');
     if (!response.ok) {
       throw new Error(
-        json?.error?.message || json?.message || `提交失败 (${response.status})`,
+        json?.error?.message ||
+          json?.message ||
+          `提交失败 (${response.status})`,
       );
     }
 
@@ -521,6 +537,7 @@ function registerGenerationHandler() {
       };
       report(event, {
         phase: summary.cancelled ? 'cancelled' : 'done',
+        ok: summary.ok,
         total,
         completed: summary.images.length,
         failed: summary.failedCount,

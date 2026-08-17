@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, ref, watch } from 'vue';
+import { X } from 'lucide-vue-next';
 
 const props = defineProps({
   open: Boolean,
@@ -40,7 +41,7 @@ watch(
             aria-label="关闭重命名"
             @click="$emit('close')"
           >
-            ×
+            <X aria-hidden="true" />
           </button>
         </header>
         <div class="settings-modal-body">

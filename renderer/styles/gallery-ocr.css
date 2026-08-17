@@ -2,8 +2,8 @@
   position: fixed;
   z-index: 260;
   inset: 0;
-  background: rgba(3, 4, 12, 0.42);
-  backdrop-filter: blur(2px);
+  background: rgba(8, 5, 17, 0.54);
+  backdrop-filter: blur(5px);
 }
 .ocr-result-panel {
   position: absolute;
@@ -14,10 +14,14 @@
   width: min(430px, 92vw);
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
-  border-left: 1px solid #4c5565;
-  background: #12141bf7;
-  box-shadow: -18px 0 60px #000b;
-  backdrop-filter: blur(18px);
+  border-left: 1px solid rgba(154, 104, 255, 0.28);
+  background: linear-gradient(
+    180deg,
+    rgba(28, 21, 43, 0.98),
+    rgba(15, 13, 25, 0.98)
+  );
+  box-shadow: -22px 0 70px rgba(3, 1, 10, 0.66);
+  backdrop-filter: blur(22px);
   color: #f1f3f5;
   font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
 }
@@ -25,21 +29,42 @@
   display: flex;
   min-height: 66px;
   padding: 0 16px 0 20px;
-  border-bottom: 1px solid #343842;
+  border-bottom: 1px solid rgba(151, 110, 255, 0.18);
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.ocr-result-panel header > div {
+.ocr-result-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+.ocr-result-heading > div {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 4px;
 }
+.ocr-result-heading-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 1px solid rgba(175, 132, 255, 0.38);
+  border-radius: 8px;
+  place-items: center;
+  background: rgba(100, 65, 163, 0.22);
+  color: #b990ff !important;
+}
+.ocr-result-heading-icon svg {
+  width: 18px;
+  height: 18px;
+}
 .ocr-result-panel header b {
   font-size: 16px;
 }
-.ocr-result-panel header span {
+.ocr-result-heading > div span {
   overflow: hidden;
   color: #9299a5;
   font-size: 12px;
@@ -58,13 +83,17 @@
   font-size: 24px;
 }
 .ocr-result-panel header button:hover {
-  background: #292d36;
+  background: rgba(108, 76, 156, 0.26);
   color: #fff;
+}
+.ocr-result-panel header button svg {
+  width: 18px;
+  height: 18px;
 }
 .ocr-result-body {
   min-height: 0;
   overflow: auto;
-  scrollbar-color: #59616f transparent;
+  scrollbar-color: #684c92 transparent;
   scrollbar-width: thin;
 }
 .ocr-lines {
@@ -74,7 +103,7 @@
 .ocr-lines p {
   margin: 0;
   padding: 9px 0;
-  border-bottom: 1px solid #292d35;
+  border-bottom: 1px solid rgba(151, 110, 255, 0.13);
   color: #e9ebef;
   font-size: 14px;
   line-height: 1.75;
@@ -103,13 +132,17 @@
   background: #251c3b;
   font-size: 20px;
 }
+.ocr-result-state > span:not(.ocr-spinner) svg {
+  width: 21px;
+  height: 21px;
+}
 .ocr-result-state b {
   color: #e5e8eb;
   font-size: 15px;
 }
 .ocr-result-state small {
   max-width: 250px;
-  color: #8d949f;
+  color: #9890a5;
   line-height: 1.6;
 }
 .ocr-result-state.ocr-error {
@@ -131,7 +164,7 @@
   display: flex;
   min-height: 62px;
   padding: 0 16px 0 20px;
-  border-top: 1px solid #343842;
+  border-top: 1px solid rgba(151, 110, 255, 0.18);
   align-items: center;
   justify-content: space-between;
   gap: 14px;
@@ -141,14 +174,21 @@
   font-size: 12px;
 }
 .ocr-result-panel footer button {
+  display: inline-flex;
   height: 36px;
   padding: 0 17px;
+  align-items: center;
+  gap: 7px;
   border: 0;
   border-radius: 7px;
   background: linear-gradient(135deg, #8f62e8, #6741b8);
   color: #fbf9ff;
   font-weight: 700;
   box-shadow: 0 8px 24px #7850cf66;
+}
+.ocr-result-panel footer button svg {
+  width: 15px;
+  height: 15px;
 }
 .ocr-result-panel footer button:hover:not(:disabled) {
   background: linear-gradient(135deg, #a477f2, #7850cc);
@@ -158,6 +198,17 @@
   border: 1px solid #3e434c;
   background: #292c33;
   color: #6e747e;
+  box-shadow: none;
+}
+.ocr-result-panel footer .ocr-cancel-button {
+  border: 1px solid rgba(182, 145, 250, 0.36);
+  background: rgba(69, 52, 92, 0.72);
+  color: #eee7f8;
+  box-shadow: none;
+}
+.ocr-result-panel footer .ocr-cancel-button:hover {
+  border-color: rgba(196, 160, 255, 0.72);
+  background: rgba(91, 66, 126, 0.9);
   box-shadow: none;
 }
 .ocr-drawer-enter-active,

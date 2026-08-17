@@ -5,13 +5,17 @@ const {
   clipboard,
   nativeImage,
   shell,
+  protocol,
+  net,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const IMAGE_PATTERN = /\.(png|jpe?g|webp)$/i;
 const CONVERSATION_FILE = 'conversations.json';
+const CONVERSATION_REFERENCE_DIRECTORY = '.references';
 const OCR_MODEL_FILES = new Set([
   'detection/model.json',
   'detection/chunk_1.dat',
@@ -21,6 +25,11 @@ const OCR_MODEL_FILES = new Set([
 ]);
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const JPEG_EXTENSIONS = new Set(['.jpg', '.jpeg']);
+const GALLERY_SCHEME = 'loomora-gallery';
+const STORAGE_SETTINGS_FILE = 'storage-settings.json';
+let configuredGalleryRoot;
+let knownGalleryRoots = [];
+let storageSettingsLoaded = false;
 
 const USER_ERROR_RULES = [
   [
@@ -37,10 +46,11 @@ const USER_ERROR_RULES = [
   [/model.*not found|unsupported model/i, '所选模型不可用'],
   [/content policy|policy violation/i, '提示词未通过安全检查'],
   [/no such file|file not found/i, '文件不存在'],
+  [/permission denied|eacces|eperm/i, '没有删除权限，请检查文件权限'],
   [/abort|cancel/i, '操作已取消'],
 ];
 
-function galleryRoots() {
+function defaultGalleryRoots() {
   const executableGallery = path.resolve(
     app.isPackaged ? path.dirname(process.execPath) : APP_ROOT,
     'Gallery',
@@ -49,6 +59,88 @@ function galleryRoots() {
   return app.isPackaged && process.platform === 'darwin'
     ? [userDataGallery, executableGallery]
     : [executableGallery, userDataGallery];
+}
+
+function storageSettingsPath() {
+  return path.join(app.getPath('userData'), STORAGE_SETTINGS_FILE);
+}
+
+function loadConfiguredGalleryRoot() {
+  if (storageSettingsLoaded) return configuredGalleryRoot;
+  storageSettingsLoaded = true;
+  try {
+    const settings = JSON.parse(fs.readFileSync(storageSettingsPath(), 'utf8'));
+    const directory = String(settings?.galleryDirectory || '').trim();
+    configuredGalleryRoot = directory ? path.resolve(directory) : undefined;
+    knownGalleryRoots = Array.isArray(settings?.knownDirectories)
+      ? settings.knownDirectories
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
+          .map((item) => path.resolve(item))
+      : [];
+  } catch {
+    configuredGalleryRoot = undefined;
+    knownGalleryRoots = [];
+  }
+  return configuredGalleryRoot;
+}
+
+function galleryRoots() {
+  const customRoot = loadConfiguredGalleryRoot();
+  const defaults = defaultGalleryRoots();
+  const primaryRoot = customRoot || defaults[0];
+  return Array.from(
+    new Set([primaryRoot, ...knownGalleryRoots, ...defaults].filter(Boolean)),
+  );
+}
+
+function currentGalleryRoot() {
+  return galleryRoots()[0];
+}
+
+function galleryStorageSettings() {
+  const defaults = defaultGalleryRoots();
+  return {
+    directory: currentGalleryRoot(),
+    defaultDirectory: defaults[0],
+    custom: Boolean(loadConfiguredGalleryRoot()),
+  };
+}
+
+function saveConfiguredGalleryRoot(directory) {
+  const normalized = String(directory || '').trim();
+  const nextRoot = normalized ? path.resolve(normalized) : undefined;
+  const nextKnownRoots = Array.from(
+    new Set(
+      [configuredGalleryRoot, nextRoot, ...knownGalleryRoots].filter(Boolean),
+    ),
+  );
+  if (nextRoot) {
+    fs.mkdirSync(nextRoot, { recursive: true });
+    if (!fs.statSync(nextRoot).isDirectory()) {
+      throw new Error('所选作品存储位置不是文件夹');
+    }
+  }
+  const filePath = storageSettingsPath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.tmp`;
+  fs.writeFileSync(
+    temporaryPath,
+    `${JSON.stringify(
+      {
+        galleryDirectory: nextRoot || '',
+        knownDirectories: nextKnownRoots,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  fs.renameSync(temporaryPath, filePath);
+  configuredGalleryRoot = nextRoot;
+  knownGalleryRoots = nextKnownRoots;
+  storageSettingsLoaded = true;
+  return galleryStorageSettings();
 }
 
 function galleryDir() {
@@ -60,15 +152,17 @@ function galleryDateDir(date) {
   const normalizedDate = String(date || '').match(/^\d{4}-\d{2}-\d{2}$/)
     ? String(date)
     : new Date().toLocaleDateString('en-CA');
-  let directory = path.join(galleryRoots()[0], normalizedDate);
-  try {
-    fs.mkdirSync(directory, { recursive: true });
-  } catch {
-    // Installed applications may not be allowed to write beside the executable.
-    directory = path.join(galleryRoots()[1], normalizedDate);
-    fs.mkdirSync(directory, { recursive: true });
+  let lastError;
+  for (const root of galleryRoots()) {
+    const directory = path.join(root, normalizedDate);
+    try {
+      fs.mkdirSync(directory, { recursive: true });
+      return directory;
+    } catch (error) {
+      lastError = error;
+    }
   }
-  return directory;
+  throw lastError || new Error('无法创建作品存储目录');
 }
 
 function isInside(root, target) {
@@ -87,11 +181,12 @@ function isGalleryImage(filePath) {
 }
 
 function sameFilePath(left, right) {
-  const a = path.resolve(left || '');
-  const b = path.resolve(right || '');
-  return process.platform === 'win32'
-    ? a.toLowerCase() === b.toLowerCase()
-    : a === b;
+  return comparableFilePath(left) === comparableFilePath(right);
+}
+
+function comparableFilePath(filePath) {
+  const target = path.resolve(filePath || '');
+  return process.platform === 'win32' ? target.toLowerCase() : target;
 }
 
 function mimeFromPath(filePath) {
@@ -100,15 +195,157 @@ function mimeFromPath(filePath) {
   return `image/${extension}`;
 }
 
-function galleryItem(filePath, buffer = fs.readFileSync(filePath)) {
+function galleryImageUrl(filePath) {
+  return `${GALLERY_SCHEME}://image?path=${encodeURIComponent(path.resolve(filePath))}`;
+}
+
+function jpegDimensions(buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
+    return null;
+  }
+  const sizeMarkers = new Set([
+    0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce,
+    0xcf,
+  ]);
+  let offset = 2;
+  while (offset + 8 < buffer.length) {
+    while (offset < buffer.length && buffer[offset] !== 0xff) offset += 1;
+    while (offset < buffer.length && buffer[offset] === 0xff) offset += 1;
+    const marker = buffer[offset++];
+    if (marker === undefined || marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) continue;
+    if (offset + 2 > buffer.length) break;
+    const segmentLength = buffer.readUInt16BE(offset);
+    if (segmentLength < 2 || offset + segmentLength > buffer.length) break;
+    if (sizeMarkers.has(marker) && segmentLength >= 7) {
+      return {
+        width: buffer.readUInt16BE(offset + 5),
+        height: buffer.readUInt16BE(offset + 3),
+      };
+    }
+    offset += segmentLength;
+  }
+  return null;
+}
+
+function webpDimensions(buffer) {
+  if (
+    buffer.length < 30 ||
+    buffer.toString('ascii', 0, 4) !== 'RIFF' ||
+    buffer.toString('ascii', 8, 12) !== 'WEBP'
+  ) {
+    return null;
+  }
+  const format = buffer.toString('ascii', 12, 16);
+  if (format === 'VP8X') {
+    return {
+      width: 1 + buffer.readUIntLE(24, 3),
+      height: 1 + buffer.readUIntLE(27, 3),
+    };
+  }
+  if (format === 'VP8L' && buffer[20] === 0x2f) {
+    return {
+      width: 1 + buffer[21] + ((buffer[22] & 0x3f) << 8),
+      height:
+        1 + (buffer[22] >> 6) + (buffer[23] << 2) + ((buffer[24] & 0x0f) << 10),
+    };
+  }
+  if (
+    format === 'VP8 ' &&
+    buffer[23] === 0x9d &&
+    buffer[24] === 0x01 &&
+    buffer[25] === 0x2a
+  ) {
+    return {
+      width: buffer.readUInt16LE(26) & 0x3fff,
+      height: buffer.readUInt16LE(28) & 0x3fff,
+    };
+  }
+  return null;
+}
+
+function imageDimensions(filePath, fileSize) {
+  const extension = path.extname(filePath).toLowerCase();
+  const headerSize = Math.min(
+    fileSize,
+    extension === '.jpg' || extension === '.jpeg' ? 256 * 1024 : 64,
+  );
+  if (!headerSize) return {};
+  const descriptor = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(headerSize);
+    const bytesRead = fs.readSync(descriptor, buffer, 0, headerSize, 0);
+    const header = buffer.subarray(0, bytesRead);
+    let dimensions;
+    if (
+      extension === '.png' &&
+      header.length >= 24 &&
+      header.toString('hex', 0, 8) === '89504e470d0a1a0a'
+    ) {
+      dimensions = {
+        width: header.readUInt32BE(16),
+        height: header.readUInt32BE(20),
+      };
+    } else if (extension === '.jpg' || extension === '.jpeg') {
+      dimensions = jpegDimensions(header);
+    } else if (extension === '.webp') {
+      dimensions = webpDimensions(header);
+    }
+    return dimensions?.width && dimensions?.height ? dimensions : {};
+  } catch {
+    return {};
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function galleryItem(filePath) {
   const stat = fs.statSync(filePath);
   return {
     name: path.basename(filePath),
     date: path.basename(path.dirname(filePath)),
     path: filePath,
-    data: `data:${mimeFromPath(filePath)};base64,${buffer.toString('base64')}`,
+    data: galleryImageUrl(filePath),
     createdAt: stat.mtimeMs,
+    ...imageDimensions(filePath, stat.size),
   };
+}
+
+function galleryImageData(filePath) {
+  const target = path.resolve(filePath || '');
+  if (!isGalleryImage(target) || !fs.existsSync(target)) {
+    throw new Error('作品图片不存在或路径无效');
+  }
+  return `data:${mimeFromPath(target)};base64,${fs.readFileSync(target).toString('base64')}`;
+}
+
+function registerGalleryScheme() {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: GALLERY_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+      },
+    },
+  ]);
+}
+
+function registerGalleryProtocol() {
+  protocol.handle(GALLERY_SCHEME, (request) => {
+    try {
+      const requestUrl = new URL(request.url);
+      const target = path.resolve(requestUrl.searchParams.get('path') || '');
+      if (!isGalleryImage(target) || !fs.existsSync(target)) {
+        return new Response('图片不存在', { status: 404 });
+      }
+      return net.fetch(pathToFileURL(target).toString());
+    } catch {
+      return new Response('图片地址无效', { status: 400 });
+    }
+  });
 }
 
 function dateFromTime(value) {
@@ -163,6 +400,12 @@ function sanitizeConversationTurn(turn = {}) {
   const imagePaths = Array.isArray(turn.imagePaths)
     ? turn.imagePaths.map((item) => String(item || '')).filter(Boolean)
     : [];
+  const referencePaths = Array.isArray(turn.referencePaths)
+    ? turn.referencePaths.map((item) => String(item || '')).filter(Boolean)
+    : [];
+  const referenceNames = Array.isArray(turn.referenceNames)
+    ? turn.referenceNames.map((item) => String(item || '参考图'))
+    : [];
   const createdAt = Number(turn.createdAt) || Date.now();
   return {
     id: String(turn.id || `turn-${createdAt}`),
@@ -175,7 +418,14 @@ function sanitizeConversationTurn(turn = {}) {
     quality: String(turn.quality || ''),
     outputFormat: String(turn.outputFormat || ''),
     count: Math.max(1, Number(turn.count) || imagePaths.length || 1),
-    referenceCount: Math.max(0, Number(turn.referenceCount) || 0),
+    referenceCount: Math.max(
+      referencePaths.length,
+      Number(turn.referenceCount) || 0,
+    ),
+    referencePaths,
+    referenceNames: referencePaths.map(
+      (_item, index) => referenceNames[index] || `参考图-${index + 1}`,
+    ),
     mode: turn.mode === 'batch' ? 'batch' : 'stream',
     status: ['running', 'done', 'error', 'cancelled'].includes(turn.status)
       ? turn.status
@@ -197,10 +447,84 @@ function sanitizeConversationTurn(turn = {}) {
   };
 }
 
+function saveConversationReferences(turn, directory, turnId) {
+  const references = Array.isArray(turn?.references) ? turn.references : [];
+  if (!references.length) {
+    return {
+      paths: Array.isArray(turn?.referencePaths) ? turn.referencePaths : [],
+      names: Array.isArray(turn?.referenceNames) ? turn.referenceNames : [],
+    };
+  }
+
+  const safeTurnId = sanitizeFolderName(turnId) || `turn-${Date.now()}`;
+  const referenceDirectory = path.join(
+    directory,
+    CONVERSATION_REFERENCE_DIRECTORY,
+    safeTurnId,
+  );
+  fs.rmSync(referenceDirectory, { recursive: true, force: true });
+  fs.mkdirSync(referenceDirectory, { recursive: true });
+
+  const paths = [];
+  const names = [];
+  references.forEach((reference, index) => {
+    const data = String(reference?.data || '');
+    const match = data.match(
+      /^data:image\/(png|jpeg|jpg|webp);base64,([a-z0-9+/=\s]+)$/i,
+    );
+    if (!match) return;
+    const mimeExtension = match[1].toLowerCase();
+    const extension = mimeExtension === 'jpeg' ? 'jpg' : mimeExtension;
+    const buffer = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
+    if (!buffer.length) return;
+    const originalName = path.basename(
+      String(reference?.name || `参考图-${index + 1}.${extension}`),
+    );
+    const baseName =
+      sanitizeFolderName(path.parse(originalName).name) ||
+      `参考图-${index + 1}`;
+    const filePath = path.join(
+      referenceDirectory,
+      `${String(index + 1).padStart(2, '0')}-${baseName}.${extension}`,
+    );
+    fs.writeFileSync(filePath, buffer);
+    paths.push(filePath);
+    names.push(originalName);
+  });
+  return { paths, names };
+}
+
+function removeConversationReferences(turn) {
+  const referencePaths = Array.isArray(turn?.referencePaths)
+    ? turn.referencePaths
+    : [];
+  const referenceDirectory = referencePaths[0]
+    ? path.dirname(path.resolve(referencePaths[0]))
+    : '';
+  if (
+    referenceDirectory &&
+    path.basename(path.dirname(referenceDirectory)) ===
+      CONVERSATION_REFERENCE_DIRECTORY &&
+    galleryRoots().some((root) => isInside(root, referenceDirectory))
+  ) {
+    fs.rmSync(referenceDirectory, { recursive: true, force: true });
+  }
+}
+
 function saveConversationTurn(turn) {
   const sanitized = sanitizeConversationTurn(turn);
   const directory = conversationDirectory(sanitized);
   if (!sanitized.folder) sanitized.folder = directory;
+  const savedReferences = saveConversationReferences(
+    turn,
+    directory,
+    sanitized.id,
+  );
+  sanitized.referencePaths = savedReferences.paths;
+  sanitized.referenceNames = savedReferences.paths.map(
+    (_item, index) => savedReferences.names[index] || `参考图-${index + 1}`,
+  );
+  sanitized.referenceCount = savedReferences.paths.length;
   const filePath = conversationFilePath(directory);
   const turns = readConversationFile(filePath);
   const index = turns.findIndex((item) => item?.id === sanitized.id);
@@ -218,10 +542,7 @@ function hydrateConversationTurn(turn) {
   sanitized.imagePaths.forEach((filePath) => {
     const target = path.resolve(filePath || '');
     if (!isGalleryImage(target) || !fs.existsSync(target)) return;
-    const buffer = fs.readFileSync(target);
-    images.push(
-      `data:${mimeFromPath(target)};base64,${buffer.toString('base64')}`,
-    );
+    images.push(galleryImageUrl(target));
     imagePaths.push(target);
   });
   return {
@@ -307,6 +628,9 @@ function deleteConversationTurn(turnId) {
         (turn) => String(turn?.id || '') !== targetId,
       );
       if (nextTurns.length === turns.length) continue;
+      turns
+        .filter((turn) => String(turn?.id || '') === targetId)
+        .forEach(removeConversationReferences);
       writeConversationFile(filePath, nextTurns);
       deleted = true;
     }
@@ -342,8 +666,13 @@ function updateStoredConversationImagePath(oldPath, nextPath) {
   }
 }
 
-function removeStoredConversationImagePath(filePath) {
-  const target = path.resolve(filePath || '');
+function removeStoredConversationImagePaths(filePaths) {
+  const targets = new Set(
+    (Array.isArray(filePaths) ? filePaths : [filePaths])
+      .filter(Boolean)
+      .map(comparableFilePath),
+  );
+  if (!targets.size) return;
   for (const root of new Set(galleryRoots())) {
     if (!fs.existsSync(root)) continue;
     for (const dateDirectory of fs.readdirSync(root, { withFileTypes: true })) {
@@ -357,7 +686,7 @@ function removeStoredConversationImagePath(filePath) {
         const paths = Array.isArray(turn.imagePaths) ? turn.imagePaths : [];
         let turnChanged = false;
         const imagePaths = paths.filter((itemPath) => {
-          const keep = !sameFilePath(itemPath, target);
+          const keep = !targets.has(comparableFilePath(itemPath));
           if (!keep) {
             turnChanged = true;
             fileChanged = true;
@@ -380,6 +709,61 @@ function removeStoredConversationImagePath(filePath) {
       if (fileChanged) writeConversationFile(historyPath, nextTurns);
     }
   }
+}
+
+function deleteGalleryFiles(filePaths) {
+  const failed = [];
+  const uniqueTargets = new Map();
+  for (const filePath of Array.isArray(filePaths) ? filePaths : []) {
+    const target = path.resolve(String(filePath || ''));
+    if (!isGalleryImage(target)) {
+      failed.push({
+        path: String(filePath || ''),
+        error: '作品图片路径无效',
+      });
+      continue;
+    }
+    uniqueTargets.set(comparableFilePath(target), target);
+  }
+
+  const deletedPaths = [];
+  const missingPaths = [];
+  for (const target of uniqueTargets.values()) {
+    if (!fs.existsSync(target)) {
+      missingPaths.push(target);
+      continue;
+    }
+    try {
+      fs.rmSync(target);
+      deletedPaths.push(target);
+    } catch (error) {
+      failed.push({
+        path: target,
+        error: formatUserError(error, '删除图片失败'),
+      });
+    }
+  }
+
+  const removedPaths = [...deletedPaths, ...missingPaths];
+  let historySyncError = '';
+  try {
+    removeStoredConversationImagePaths(removedPaths);
+  } catch (error) {
+    historySyncError = formatUserError(
+      error,
+      '图片已删除，但创作记录同步失败，请稍后检查',
+    );
+  }
+
+  return {
+    canceled: false,
+    deleted: deletedPaths.length,
+    deletedPaths,
+    missingPaths,
+    removedPaths,
+    failed,
+    historySyncError,
+  };
 }
 
 function formatUserError(value, fallback = '操作失败，请稍后重试') {
@@ -598,6 +982,23 @@ async function saveGeneratedImages(items, { key, outputFormat = 'png' }) {
 }
 
 function registerGalleryHandlers() {
+  ipcMain.handle('get-gallery-storage', async () => galleryStorageSettings());
+
+  ipcMain.handle('choose-gallery-storage', async (_event, currentPath) => {
+    const result = await dialog.showOpenDialog({
+      title: '选择作品与历史记录存储位置',
+      defaultPath: String(currentPath || currentGalleryRoot()),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return result.canceled || !result.filePaths[0]
+      ? { canceled: true, directory: '' }
+      : { canceled: false, directory: path.resolve(result.filePaths[0]) };
+  });
+
+  ipcMain.handle('set-gallery-storage', async (_event, directory) =>
+    saveConfiguredGalleryRoot(directory),
+  );
+
   ipcMain.handle('pick-image', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
@@ -612,6 +1013,10 @@ function registerGalleryHandlers() {
   });
 
   ipcMain.handle('list-gallery', async () => listGallery());
+
+  ipcMain.handle('read-gallery-image', async (_event, filePath) =>
+    galleryImageData(filePath),
+  );
 
   ipcMain.handle('list-conversation-history', async (_event, options) =>
     listConversationHistory(options),
@@ -698,8 +1103,14 @@ function registerGalleryHandlers() {
     };
   });
 
-  ipcMain.handle('copy-image', async (_event, source) => {
-    const image = nativeImage.createFromDataURL(source);
+  ipcMain.handle('copy-image', async (_event, payload) => {
+    const filePath = path.resolve(payload?.filePath || '');
+    const image =
+      isGalleryImage(filePath) && fs.existsSync(filePath)
+        ? nativeImage.createFromPath(filePath)
+        : nativeImage.createFromDataURL(
+            typeof payload === 'string' ? payload : payload?.src,
+          );
     if (image.isEmpty()) throw new Error('无法复制图片');
     clipboard.writeImage(image);
     return true;
@@ -814,24 +1225,9 @@ function registerGalleryHandlers() {
     };
   });
 
-  ipcMain.handle('delete-image', async (_event, filePath) => {
-    const target = path.resolve(filePath || '');
-    if (!isGalleryImage(target)) throw new Error('作品图片路径无效');
-    if (!fs.existsSync(target)) return { deleted: false };
-    const confirmation = await dialog.showMessageBox({
-      type: 'warning',
-      buttons: ['删除', '取消'],
-      defaultId: 1,
-      cancelId: 1,
-      title: '删除图片',
-      message: '确定要永久删除这张图片吗？',
-      detail: path.basename(target),
-    });
-    if (confirmation.response !== 0) return { deleted: false };
-    fs.unlinkSync(target);
-    removeStoredConversationImagePath(target);
-    return { deleted: true };
-  });
+  ipcMain.handle('delete-gallery-images', async (_event, filePaths) =>
+    deleteGalleryFiles(filePaths),
+  );
 
   ipcMain.handle('rename-image', async (_event, payload) => {
     try {
@@ -893,4 +1289,10 @@ function registerGalleryHandlers() {
   });
 }
 
-module.exports = { registerGalleryHandlers, saveGeneratedImages };
+module.exports = {
+  deleteGalleryFiles,
+  registerGalleryHandlers,
+  registerGalleryProtocol,
+  registerGalleryScheme,
+  saveGeneratedImages,
+};

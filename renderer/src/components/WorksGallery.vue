@@ -7,13 +7,35 @@ import {
   ref,
   watch,
 } from 'vue';
+import {
+  Check,
+  CheckCheck,
+  CircleX,
+  Copy,
+  FolderDown,
+  FolderOpen,
+  History,
+  ImagePlus,
+  ListChecks,
+  Pencil,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-vue-next';
+import aiAvatar from '../../assets/avatars/ai-avatar-v2.svg';
+import userAvatar from '../../assets/avatars/user-avatar-v2.svg';
+import startArtwork from '../../assets/inspiration/gptimage-vinyl-landscape.png';
 
 const props = defineProps({
   view: { type: String, required: true },
+  active: { type: Boolean, default: true },
   conversationHistory: { type: Array, default: () => [] },
   conversationLoading: Boolean,
   conversationOffset: { type: Number, default: 0 },
   conversationTotal: { type: Number, default: 0 },
+  conversationStartMode: Boolean,
   conversationHasOlder: Boolean,
   conversationHasNewer: Boolean,
   scrollBottomSignal: { type: Number, default: 0 },
@@ -25,6 +47,7 @@ const props = defineProps({
   liveProgress: { type: Object, default: () => ({}) },
   liveActive: Boolean,
   gallery: { type: Array, required: true },
+  galleryTotal: { type: Number, default: 0 },
   galleryColumns: { type: Array, required: true },
   galleryColumnCount: { type: Number, required: true },
   galleryLoading: Boolean,
@@ -35,6 +58,7 @@ const props = defineProps({
   gallerySelectedPaths: { type: Array, default: () => [] },
   gallerySelectedCount: { type: Number, default: 0 },
   galleryExporting: Boolean,
+  galleryDeleting: Boolean,
 });
 const emit = defineEmits([
   'preview',
@@ -45,14 +69,18 @@ const emit = defineEmits([
   'toggle-selection-mode',
   'export-current',
   'export-selected',
+  'clear-all',
+  'delete-selected',
   'update-gallery-search',
   'load-older-conversations',
   'load-newer-conversations',
   'load-latest-conversations',
+  'show-conversation-history',
   'copy-prompt',
   'edit-prompt',
   'delete-conversation',
   'regenerate-conversation',
+  'reference-conversation-image',
   'open-conversation-folder',
   'conversation-scroll',
   'conversation-scroll-state',
@@ -60,22 +88,79 @@ const emit = defineEmits([
 const dragActive = ref(false);
 const generationChat = ref(null);
 const gallerySticky = ref(null);
+const libraryGallery = ref(null);
 const galleryStickyStuck = ref(false);
 const suppressConversationScroll = ref(false);
 const conversationScrolledAway = ref(false);
 const conversationLoadDirection = ref('');
+const galleryViewport = ref({ top: 0, bottom: 900 });
+const galleryColumnWidth = ref(280);
+const galleryMeasurementVersion = ref(0);
+const galleryCardHeights = new Map();
+const galleryCardElements = new Map();
 let suppressConversationTimer;
 let scrollSettleTimer;
 let pageRestoreTimer;
 let pageLoadFrame;
+let galleryVirtualFrame;
+let galleryCardObserver;
 let pendingConversationLoad = null;
 let conversationLoadStartedAt = 0;
 let lastConversationScrollTop = 0;
 let galleryScrollRoot;
 let galleryStickyFrame;
 const CONVERSATION_LOAD_EDGE = 40;
-const CONVERSATION_RESTORE_GAP = 72;
 const CONVERSATION_LOADING_MIN_DURATION = 220;
+const GALLERY_CARD_GAP = 16;
+const GALLERY_CARD_HEIGHT_ESTIMATE = 340;
+const GALLERY_CARD_META_HEIGHT = 60;
+const GALLERY_VIRTUAL_OVERSCAN = 900;
+const estimatedGalleryCardHeight = computed(() => {
+  void galleryMeasurementVersion.value;
+  if (!galleryCardHeights.size) return GALLERY_CARD_HEIGHT_ESTIMATE;
+  let total = 0;
+  for (const height of galleryCardHeights.values()) total += height;
+  return Math.max(180, Math.min(560, total / galleryCardHeights.size));
+});
+const galleryColumnLayouts = computed(() => {
+  void galleryMeasurementVersion.value;
+  return props.galleryColumns.map((items) => {
+    const offsets = [];
+    const heights = [];
+    let totalHeight = 0;
+    for (const item of items) {
+      const height = galleryCardHeight(item);
+      offsets.push(totalHeight);
+      heights.push(height);
+      totalHeight += height + GALLERY_CARD_GAP;
+    }
+    return { items, offsets, heights, totalHeight };
+  });
+});
+const virtualGalleryColumns = computed(() => {
+  const visibleTop = Math.max(
+    0,
+    galleryViewport.value.top - GALLERY_VIRTUAL_OVERSCAN,
+  );
+  const visibleBottom = galleryViewport.value.bottom + GALLERY_VIRTUAL_OVERSCAN;
+  return galleryColumnLayouts.value.map((layout) => {
+    const start = firstGalleryItemAt(layout, visibleTop);
+    let end = start;
+    while (end < layout.items.length && layout.offsets[end] <= visibleBottom) {
+      end += 1;
+    }
+    const topSpacer = layout.offsets[start] || 0;
+    const renderedBottom =
+      end > start
+        ? layout.offsets[end - 1] + layout.heights[end - 1] + GALLERY_CARD_GAP
+        : topSpacer;
+    return {
+      items: layout.items.slice(start, end),
+      topSpacer,
+      bottomSpacer: Math.max(0, layout.totalHeight - renderedBottom),
+    };
+  });
+});
 const galleryHeadText = computed(() => {
   if (props.galleryLoading) return '正在读取本地作品...';
   if (props.galleryExporting) return '正在导出到文件夹...';
@@ -125,6 +210,87 @@ function onDrop(event) {
   dragActive.value = false;
   const files = Array.from(event.dataTransfer?.files || []);
   if (files.length) emit('import-drop', files);
+}
+
+function galleryCardHeight(item) {
+  const measuredHeight = galleryCardHeights.get(item.path);
+  if (measuredHeight) return measuredHeight;
+  const width = Number(item.width);
+  const height = Number(item.height);
+  if (width > 0 && height > 0) {
+    return (
+      (galleryColumnWidth.value * height) / width + GALLERY_CARD_META_HEIGHT
+    );
+  }
+  return estimatedGalleryCardHeight.value;
+}
+
+function firstGalleryItemAt(layout, target) {
+  let low = 0;
+  let high = layout.items.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const itemBottom =
+      layout.offsets[middle] + layout.heights[middle] + GALLERY_CARD_GAP;
+    if (itemBottom < target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function setGalleryCardRef(element, item) {
+  const current = galleryCardElements.get(item.path);
+  if (!element) {
+    if (current) galleryCardObserver?.unobserve(current);
+    galleryCardElements.delete(item.path);
+    return;
+  }
+  if (current === element) return;
+  if (current) galleryCardObserver?.unobserve(current);
+  galleryCardElements.set(item.path, element);
+  galleryCardObserver?.observe(element);
+}
+
+function scheduleGalleryViewportUpdate() {
+  window.cancelAnimationFrame(galleryVirtualFrame);
+  galleryVirtualFrame = window.requestAnimationFrame(() => {
+    const gallery = libraryGallery.value;
+    const scrollRoot = galleryScrollRoot;
+    if (!gallery || !scrollRoot || props.view !== 'gallery' || !props.active) {
+      return;
+    }
+    const galleryRect = gallery.getBoundingClientRect();
+    const rootRect = scrollRoot.getBoundingClientRect();
+    const nextColumnWidth = Math.max(
+      1,
+      (gallery.clientWidth -
+        GALLERY_CARD_GAP * Math.max(0, props.galleryColumnCount - 1)) /
+        Math.max(1, props.galleryColumnCount),
+    );
+    if (Math.abs(galleryColumnWidth.value - nextColumnWidth) > 2) {
+      galleryColumnWidth.value = nextColumnWidth;
+      galleryCardHeights.clear();
+      galleryMeasurementVersion.value += 1;
+    }
+    const top = Math.max(0, rootRect.top - galleryRect.top);
+    const bottom = Math.max(top, rootRect.bottom - galleryRect.top);
+    const current = galleryViewport.value;
+    if (
+      Math.abs(current.top - top) > 1 ||
+      Math.abs(current.bottom - bottom) > 1
+    ) {
+      galleryViewport.value = { top, bottom };
+    }
+  });
+}
+
+function syncGalleryMeasurements() {
+  const paths = new Set(props.gallery.map((item) => item.path));
+  for (const itemPath of galleryCardHeights.keys()) {
+    if (!paths.has(itemPath)) galleryCardHeights.delete(itemPath);
+  }
+  galleryMeasurementVersion.value += 1;
+  nextTick(scheduleGalleryViewportUpdate);
 }
 
 function isSelected(filePath) {
@@ -204,21 +370,31 @@ function turnPreviewStyle(turn) {
     .split(':')
     .map(Number);
   const ratio = width && height ? `${width} / ${height}` : '4 / 3';
-  const total =
-    turn?.status === 'running'
-      ? Math.max(1, Number(turn?.progress?.total) || Number(turn?.count) || 1)
-      : Math.max(1, turn?.images?.length || 1);
-  const mode = total > 1 ? 'batch' : 'single';
+  const requestedTotal = Math.max(
+    1,
+    Number(turn?.progress?.total) || Number(turn?.count) || 1,
+  );
+  const imageTotal = Math.max(0, Number(turn?.images?.length) || 0);
+  const preserveRequestedLayout = turn?.status !== 'done';
+  const layoutTotal = preserveRequestedLayout
+    ? requestedTotal
+    : Math.max(1, imageTotal);
+  const renderedTotal = ['running', 'error'].includes(turn?.status)
+    ? requestedTotal
+    : Math.max(1, imageTotal);
+  const mode = layoutTotal > 1 ? 'batch' : 'single';
   const previewWidth = previewWidthByRatio(turn?.ratio, mode);
-  const columns = mode === 'batch' ? Math.min(6, total) : 1;
+  const columns = mode === 'batch' ? Math.min(6, renderedTotal) : 1;
   const gridWidth = previewWidth * columns + 12 * (columns - 1);
+  const cardColumns = mode === 'batch' ? Math.min(6, layoutTotal) : 1;
+  const cardGridWidth = previewWidth * cardColumns + 12 * (cardColumns - 1);
   return {
     '--generation-ratio': ratio,
     '--generation-preview-width': `${previewWidth}px`,
     '--generation-slot-width': `${previewWidth}px`,
     '--generation-grid-columns': columns,
     '--generation-grid-width': `${gridWidth}px`,
-    '--generation-card-width': `${Math.max(280, gridWidth + 30)}px`,
+    '--generation-card-width': `${Math.max(280, cardGridWidth + 30)}px`,
   };
 }
 
@@ -247,18 +423,64 @@ function turnSlotState(turn, slot) {
 }
 
 function turnPreviewSlots(turn) {
+  if (turn.status === 'error') {
+    return turnSlots(turn).map((slot) => {
+      const image = Array.isArray(turn.images) ? turn.images[slot.index] : '';
+      return {
+        ...slot,
+        src: image,
+        persisted: Boolean(image),
+        done: Boolean(image),
+        failed: !image,
+      };
+    });
+  }
   if (turn.status !== 'running') {
     return (turn.images || []).map((src, index) => ({
       index,
       src,
       persisted: true,
       done: true,
+      failed: false,
     }));
   }
   return turnSlots(turn).map((slot) => ({
     ...slot,
     ...turnSlotState(turn, slot),
   }));
+}
+
+function conversationWindowKey() {
+  const turns = props.conversationHistory;
+  return `${turns.length}:${turns[0]?.id || ''}:${turns.at(-1)?.id || ''}`;
+}
+
+function conversationAnchor(element, direction) {
+  const rootRect = element.getBoundingClientRect();
+  const rootTop = rootRect.top;
+  const turns = Array.from(
+    element.querySelectorAll('[data-conversation-id]'),
+  ).filter((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.bottom > rootTop && rect.top < rootRect.bottom;
+  });
+  const node = direction === 'newer' ? turns.at(-1) : turns[0];
+  if (!node) return null;
+  return {
+    id: node.dataset.conversationId,
+    top: node.getBoundingClientRect().top - rootTop,
+  };
+}
+
+function restoreConversationAnchor(element, anchor) {
+  if (!anchor?.id) return false;
+  const rootTop = element.getBoundingClientRect().top;
+  const node = Array.from(
+    element.querySelectorAll('[data-conversation-id]'),
+  ).find((item) => item.dataset.conversationId === anchor.id);
+  if (!node) return false;
+  element.scrollTop += node.getBoundingClientRect().top - rootTop - anchor.top;
+  return true;
 }
 
 function clearScrollSettleTimers() {
@@ -269,11 +491,13 @@ function clearScrollSettleTimers() {
 }
 
 function updateGalleryStickyState() {
+  if (!props.active) return;
   window.cancelAnimationFrame(galleryStickyFrame);
+  scheduleGalleryViewportUpdate();
   galleryStickyFrame = window.requestAnimationFrame(() => {
     const sticky = gallerySticky.value;
     const scrollRoot = galleryScrollRoot;
-    if (!sticky || !scrollRoot) return;
+    if (!sticky || !scrollRoot || !props.active) return;
     const rootTop = scrollRoot.getBoundingClientRect().top;
     galleryStickyStuck.value =
       scrollRoot.scrollTop > 0 &&
@@ -293,7 +517,7 @@ function measureConversationAwayFromBottom() {
 
 function scrollConversationToBottom({ smooth = false } = {}) {
   const element = generationChat.value;
-  if (!element || props.view !== 'create') return;
+  if (!element || props.view !== 'create' || !props.active) return;
   nextTick(() => {
     clearScrollSettleTimers();
     suppressConversationScroll.value = true;
@@ -323,10 +547,27 @@ function scrollConversationToBottom({ smooth = false } = {}) {
   });
 }
 
-function setConversationAwayFromBottom(value) {
-  if (conversationScrolledAway.value === value) return;
+function onCreationStateEntered() {
+  if (props.conversationHistory.length && !conversationScrolledAway.value) {
+    scrollConversationToBottom();
+  }
+}
+
+function setConversationAwayFromBottom(value, options = {}) {
+  if (conversationScrolledAway.value === value) {
+    if (!value && options.userScrolledTowardBottom) {
+      emit('conversation-scroll-state', {
+        awayFromBottom: false,
+        userScrolledTowardBottom: true,
+      });
+    }
+    return;
+  }
   conversationScrolledAway.value = value;
-  emit('conversation-scroll-state', value);
+  emit('conversation-scroll-state', {
+    awayFromBottom: value,
+    userScrolledTowardBottom: Boolean(options.userScrolledTowardBottom),
+  });
 }
 
 function requestConversationWindow(direction) {
@@ -342,7 +583,8 @@ function requestConversationWindow(direction) {
   }
   pendingConversationLoad = {
     direction,
-    offset: props.conversationOffset,
+    windowKey: conversationWindowKey(),
+    anchor: conversationAnchor(element, direction),
   };
   conversationLoadDirection.value = direction;
   conversationLoadStartedAt = performance.now();
@@ -360,43 +602,40 @@ function restoreConversationWindow() {
   const pending = pendingConversationLoad;
   const element = generationChat.value;
   if (!pending || !element || props.conversationLoading) return;
-  const loadingElapsed = performance.now() - conversationLoadStartedAt;
-  const restoreDelay = Math.max(
-    0,
-    CONVERSATION_LOADING_MIN_DURATION - loadingElapsed,
-  );
   window.clearTimeout(pageRestoreTimer);
-  pageRestoreTimer = window.setTimeout(() => {
-    nextTick(() => {
-      if (pending.offset === props.conversationOffset) {
-        pendingConversationLoad = null;
-        conversationLoadDirection.value = '';
-        suppressConversationScroll.value = false;
-        return;
-      }
-      const maxScrollTop = Math.max(
-        0,
-        element.scrollHeight - element.clientHeight,
-      );
-      if (pending.direction === 'older') {
-        element.scrollTop = Math.max(
-          0,
-          maxScrollTop - CONVERSATION_RESTORE_GAP,
-        );
-      } else if (pending.direction === 'newer') {
-        element.scrollTop = Math.min(CONVERSATION_RESTORE_GAP, maxScrollTop);
-      } else {
-        element.scrollTop = maxScrollTop;
-      }
-      lastConversationScrollTop = element.scrollTop;
+  nextTick(() => {
+    if (pending !== pendingConversationLoad) return;
+    const maxScrollTop = Math.max(
+      0,
+      element.scrollHeight - element.clientHeight,
+    );
+    if (pending.direction === 'latest') {
+      element.scrollTop = maxScrollTop;
+    } else if (pending.windowKey !== conversationWindowKey()) {
+      restoreConversationAnchor(element, pending.anchor);
+    }
+    lastConversationScrollTop = element.scrollTop;
+
+    const finishRestore = () => {
       window.requestAnimationFrame(() => {
+        if (pending !== pendingConversationLoad) return;
         pendingConversationLoad = null;
         conversationLoadDirection.value = '';
         suppressConversationScroll.value = false;
         setConversationAwayFromBottom(measureConversationAwayFromBottom());
       });
-    });
-  }, restoreDelay);
+    };
+    const loadingElapsed = performance.now() - conversationLoadStartedAt;
+    const indicatorDelay = Math.max(
+      0,
+      CONVERSATION_LOADING_MIN_DURATION - loadingElapsed,
+    );
+    if (indicatorDelay) {
+      pageRestoreTimer = window.setTimeout(finishRestore, indicatorDelay);
+    } else {
+      finishRestore();
+    }
+  });
 }
 
 function onConversationScroll() {
@@ -407,8 +646,12 @@ function onConversationScroll() {
   const direction = scrollTop - lastConversationScrollTop;
   lastConversationScrollTop = scrollTop;
   const awayFromBottom = measureConversationAwayFromBottom();
-  setConversationAwayFromBottom(awayFromBottom);
-  if (awayFromBottom) emit('conversation-scroll');
+  setConversationAwayFromBottom(awayFromBottom, {
+    userScrolledTowardBottom: direction > 0,
+  });
+  if (direction < 0 || (direction > 0 && awayFromBottom)) {
+    emit('conversation-scroll', { force: true });
+  }
 
   if (direction < 0 && scrollTop <= CONVERSATION_LOAD_EDGE) {
     requestConversationWindow('older');
@@ -454,6 +697,7 @@ watch(
   () => {
     if (
       props.view !== 'create' ||
+      !props.active ||
       props.conversationLoading ||
       pendingConversationLoad ||
       conversationScrolledAway.value
@@ -466,9 +710,40 @@ watch(
 );
 
 watch(
-  () => [props.conversationLoading, props.conversationOffset],
+  () => [
+    props.conversationLoading,
+    props.conversationOffset,
+    conversationWindowKey(),
+  ],
   () => {
     restoreConversationWindow();
+  },
+);
+
+watch(
+  () => [
+    props.view,
+    props.galleryLoading,
+    props.gallery.map((item) => item.path).join('\n'),
+  ],
+  syncGalleryMeasurements,
+  { immediate: true },
+);
+
+watch(
+  () => props.galleryColumnCount,
+  () => {
+    galleryCardHeights.clear();
+    galleryMeasurementVersion.value += 1;
+    nextTick(scheduleGalleryViewportUpdate);
+  },
+);
+
+watch(
+  () => props.active,
+  (active) => {
+    if (!active) return;
+    nextTick(updateGalleryStickyState);
   },
 );
 
@@ -479,7 +754,8 @@ watch(
       if (props.conversationLoading || pendingConversationLoad) return;
       pendingConversationLoad = {
         direction: 'latest',
-        offset: props.conversationOffset,
+        windowKey: conversationWindowKey(),
+        anchor: null,
       };
       conversationLoadDirection.value = 'latest';
       conversationLoadStartedAt = performance.now();
@@ -498,6 +774,24 @@ watch(
 );
 
 onMounted(() => {
+  galleryCardObserver = new ResizeObserver((entries) => {
+    let changed = false;
+    for (const entry of entries) {
+      const itemPath = entry.target.dataset.galleryPath;
+      const height =
+        entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height;
+      if (
+        !itemPath ||
+        !height ||
+        Math.abs((galleryCardHeights.get(itemPath) || 0) - height) < 1
+      ) {
+        continue;
+      }
+      galleryCardHeights.set(itemPath, height);
+      changed = true;
+    }
+    if (changed) galleryMeasurementVersion.value += 1;
+  });
   nextTick(() => {
     galleryScrollRoot = gallerySticky.value?.closest('.content-scroll');
     galleryScrollRoot?.addEventListener('scroll', updateGalleryStickyState, {
@@ -510,9 +804,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearScrollSettleTimers();
+  galleryCardObserver?.disconnect();
+  galleryCardElements.clear();
   galleryScrollRoot?.removeEventListener('scroll', updateGalleryStickyState);
   window.removeEventListener('resize', updateGalleryStickyState);
   window.cancelAnimationFrame(galleryStickyFrame);
+  window.cancelAnimationFrame(galleryVirtualFrame);
 });
 </script>
 
@@ -524,6 +821,7 @@ onBeforeUnmount(() => {
       'library-loading-view': view === 'gallery' && galleryLoading,
       'library-empty-view':
         view === 'gallery' && !galleryLoading && !gallery.length,
+      'selection-mode': view === 'gallery' && gallerySelectionMode,
     }"
   >
     <div
@@ -538,10 +836,7 @@ onBeforeUnmount(() => {
           <h1>作品库</h1>
         </div>
         <div class="gallery-search">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m16.5 16.5 4 4" />
-          </svg>
+          <Search aria-hidden="true" />
           <input
             :value="gallerySearch"
             type="search"
@@ -550,307 +845,394 @@ onBeforeUnmount(() => {
             @input="emit('update-gallery-search', $event.target.value)"
           />
         </div>
+        <div class="gallery-head-actions">
+          <button
+            type="button"
+            class="gallery-import-button"
+            :disabled="
+              galleryLoading ||
+              galleryImporting ||
+              galleryExporting ||
+              galleryDeleting
+            "
+            title="从电脑导入图片"
+            @click="emit('import')"
+          >
+            <ImagePlus aria-hidden="true" />
+            <span>{{ galleryImporting ? '导入中...' : '导入' }}</span>
+          </button>
+          <button
+            type="button"
+            class="gallery-select-button"
+            :class="{ active: gallerySelectionMode }"
+            :disabled="
+              galleryLoading ||
+              galleryImporting ||
+              galleryExporting ||
+              galleryDeleting ||
+              !gallery.length
+            "
+            :title="gallerySelectionMode ? '退出多选' : '选择多张作品'"
+            @click="emit('toggle-selection-mode')"
+          >
+            <ListChecks aria-hidden="true" />
+            <span>{{ gallerySelectionMode ? '退出多选' : '多选' }}</span>
+          </button>
+          <button
+            type="button"
+            class="gallery-export-button"
+            :disabled="
+              galleryLoading ||
+              galleryImporting ||
+              galleryExporting ||
+              galleryDeleting ||
+              !gallery.length
+            "
+            :title="galleryExportCurrentTitle"
+            @click="emit('export-current')"
+          >
+            <FolderDown aria-hidden="true" />
+            <span>{{ galleryExportCurrentLabel }}</span>
+          </button>
+          <button
+            type="button"
+            class="gallery-clear-button"
+            :disabled="
+              galleryLoading ||
+              galleryImporting ||
+              galleryExporting ||
+              galleryDeleting ||
+              galleryTotal === 0
+            "
+            title="永久删除作品库中的全部图片"
+            @click="emit('clear-all')"
+          >
+            <Trash2 aria-hidden="true" />
+            <span>{{ galleryDeleting ? '清空中...' : '清空全部' }}</span>
+          </button>
+        </div>
       </div>
       <div class="works-head-meta">
         <span>{{ galleryHeadText }}</span>
         <span class="gallery-drop-hint">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3v12" />
-            <path d="m8 9 4-4 4 4" />
-            <path d="M6 15.5V17a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-1.5" />
-          </svg>
+          <Upload aria-hidden="true" />
           拖拽图片到当前页面即可导入
         </span>
       </div>
     </div>
-    <div v-if="view === 'gallery'" class="gallery-side-actions">
-      <button
-        type="button"
-        class="gallery-select-button"
-        :class="{ active: gallerySelectionMode }"
-        :disabled="
-          galleryLoading ||
-          galleryImporting ||
-          galleryExporting ||
-          !gallery.length
-        "
-        :title="
-          gallerySelectionMode ? '退出多选' : '进入多选，勾选图片后批量导出'
-        "
-        @click="emit('toggle-selection-mode')"
+    <Transition name="gallery-selection-toolbar">
+      <div
+        v-if="view === 'gallery' && gallerySelectionMode"
+        class="gallery-selection-toolbar"
+        role="toolbar"
+        aria-label="作品多选操作"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="5.5" y="5.5" width="13" height="13" rx="3" />
-          <path d="m8.5 12 2.5 2.5 4.5-4.5" />
-        </svg>
-        <span>{{ gallerySelectionMode ? '退出多选' : '多选' }}</span>
-      </button>
-      <button
-        type="button"
-        class="gallery-export-button"
-        :disabled="
-          galleryLoading ||
-          galleryImporting ||
-          galleryExporting ||
-          !gallery.length
-        "
-        :title="galleryExportCurrentTitle"
-        @click="emit('export-current')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 4v8" />
-          <path d="m8 9 4 4 4-4" />
-          <path d="M5 19h14" />
-        </svg>
-        <span>{{ galleryExportCurrentLabel }}</span>
-      </button>
-      <button
-        type="button"
-        class="gallery-export-button"
-        :disabled="
-          galleryLoading ||
-          galleryImporting ||
-          galleryExporting ||
-          gallerySelectedCount === 0
-        "
-        title="导出已勾选图片到文件夹"
-        @click="emit('export-selected')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M6 7h5l1.8 2H18a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z"
-          />
-          <path d="m9 13 2 2 4-4" />
-        </svg>
-        <span>导出已选</span>
-      </button>
-      <button
-        type="button"
-        class="gallery-import-button"
-        :disabled="galleryLoading || galleryImporting || galleryExporting"
-        @click="emit('import')"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 21V9" />
-          <path d="m8 15 4 4 4-4" />
-          <path d="M5 5h14" />
-        </svg>
-        <span>{{ galleryImporting ? '导入中...' : '导入' }}</span>
-      </button>
-    </div>
+        <span class="gallery-selection-summary">
+          <CheckCheck aria-hidden="true" />
+          <span
+            ><b>{{ gallerySelectedCount }}</b> 张已选择</span
+          >
+        </span>
+        <span class="gallery-selection-divider" aria-hidden="true"></span>
+        <button
+          type="button"
+          class="gallery-selection-export"
+          :disabled="
+            galleryExporting || galleryDeleting || gallerySelectedCount === 0
+          "
+          title="把已选择的图片导出到文件夹"
+          @click="emit('export-selected')"
+        >
+          <FolderDown aria-hidden="true" />
+          <span>{{ galleryExporting ? '正在导出...' : '导出已选' }}</span>
+        </button>
+        <button
+          type="button"
+          class="gallery-selection-delete"
+          :disabled="
+            galleryExporting || galleryDeleting || gallerySelectedCount === 0
+          "
+          title="永久删除已选择的本地图片"
+          @click="emit('delete-selected')"
+        >
+          <Trash2 aria-hidden="true" />
+          <span>{{ galleryDeleting ? '正在删除...' : '删除已选' }}</span>
+        </button>
+        <button
+          type="button"
+          class="gallery-selection-cancel"
+          :disabled="galleryDeleting"
+          title="退出多选"
+          @click="emit('toggle-selection-mode')"
+        >
+          <X aria-hidden="true" />
+          <span>退出</span>
+        </button>
+      </div>
+    </Transition>
     <div
       v-if="view === 'create'"
       ref="generationChat"
       class="generation-chat"
-      :class="{ empty: !conversationHistory.length }"
+      :class="{
+        empty: !conversationHistory.length,
+        'start-screen': conversationStartMode,
+      }"
       @scroll="onConversationScroll"
       @wheel.passive="onConversationWheel"
     >
-      <div
-        v-if="conversationLoadDirection === 'older'"
-        class="conversation-load-indicator top"
-        role="status"
+      <Transition
+        name="creation-state"
+        mode="out-in"
+        @after-enter="onCreationStateEntered"
       >
-        <span class="conversation-load-spinner"></span>
-        <span>正在加载更早的对话...</span>
-      </div>
-      <div v-if="!conversationHistory.length" class="empty-state">
-        <span class="create-empty-icon">✧</span><b>织一束光，生成第一幅作品</b
-        ><small>每一次生成都会像聊天记录一样保留在这里</small>
-      </div>
-      <article
-        v-for="(turn, turnIndex) in conversationHistory"
-        :key="turn.id"
-        class="generation-chat-turn"
-        :class="[`status-${turn.status}`, `mode-${turn.mode}`]"
-      >
-        <div class="generation-chat-message user">
-          <div class="generation-chat-bubble generation-chat-user-bubble">
-            <div class="generation-chat-user-head">
-              <b>第 {{ turnDisplayIndex(turnIndex) }} 轮</b>
-              <small>{{ turnTime(turn) }}</small>
+        <div
+          v-if="!conversationHistory.length"
+          key="creation-start"
+          class="creation-state creation-state-start"
+        >
+          <div class="creation-start">
+            <div class="creation-start-art" aria-hidden="true">
+              <img :src="startArtwork" alt="" />
             </div>
-            <p>{{ turn.prompt }}</p>
-            <div class="generation-chat-user-foot">
-              <small>{{ turnMeta(turn) }}</small>
-              <div class="generation-chat-prompt-actions">
-                <button
-                  type="button"
-                  title="复制这条提示词"
-                  aria-label="复制这条提示词"
-                  @click="emit('copy-prompt', turn)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="9" y="9" width="10" height="10" rx="2" />
-                    <path d="M5 15V7a2 2 0 0 1 2-2h8" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  title="回填到创作面板继续编辑"
-                  aria-label="回填到创作面板继续编辑"
-                  @click="emit('edit-prompt', turn)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M4 20h4l10.5-10.5a2.8 2.8 0 0 0-4-4L4 16v4Z" />
-                    <path d="m13.5 6.5 4 4" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="danger"
-                  title="删除这轮对话记录，不删除作品库图片"
-                  aria-label="删除这轮对话记录，不删除作品库图片"
-                  @click="emit('delete-conversation', turn)"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M5 7h14" />
-                    <path d="M10 11v6M14 11v6" />
-                    <path d="M8 7l1-2h6l1 2" />
-                    <path d="M7 7l1 13h8l1-13" />
-                  </svg>
-                </button>
-              </div>
+            <div class="creation-start-copy">
+              <span class="creation-start-english"
+                >loom light into images.</span
+              >
+              <h1>今天想创造什么？</h1>
+              <p>灵感落笔处，光芒渐次生</p>
+              <button
+                v-if="conversationStartMode && conversationTotal"
+                type="button"
+                class="creation-history-button"
+                title="查看本地保存的创作对话"
+                @click="emit('show-conversation-history')"
+              >
+                <History aria-hidden="true" />
+                <span>查看历史创作</span>
+                <b>{{ conversationTotal }}</b>
+              </button>
             </div>
           </div>
-          <span class="generation-chat-avatar">我</span>
         </div>
-        <div class="generation-chat-message assistant">
-          <span class="generation-chat-avatar assistant">AI</span>
+        <div
+          v-else
+          key="creation-history"
+          class="creation-state creation-state-history"
+        >
           <div
-            class="generation-chat-bubble generation-chat-assistant-bubble"
-            :style="turnPreviewStyle(turn)"
+            v-if="conversationLoadDirection === 'older'"
+            class="conversation-load-indicator top"
+            role="status"
           >
-            <div class="generation-chat-response-head">
-              <div class="generation-chat-response-title">
-                <span class="generation-chat-response-tag">AI 回复</span>
-                <b>{{ turnStatusText(turn) }}</b>
-              </div>
-              <small>{{ turnTime(turn) }}</small>
-            </div>
-            <div class="generation-chat-response-meta">
-              {{ turnMeta(turn) }}
-            </div>
-            <div
-              v-if="turn.status === 'running' || turn.images?.length"
-              class="generation-chat-images"
-              :class="{
-                single: turnPreviewSlots(turn).length === 1,
-                running: turn.status === 'running',
-              }"
-              aria-live="polite"
-            >
-              <div
-                v-for="slot in turnPreviewSlots(turn)"
-                :key="`${turn.id}-${slot.index}`"
-                class="generation-chat-image-slot"
-                :class="{
-                  loading: !slot.src,
-                  previewing: slot.src && !slot.persisted,
-                  clickable: slot.persisted,
-                }"
-              >
-                <img
-                  v-if="slot.src"
-                  :src="slot.src"
-                  :alt="`生成图片 ${slot.index + 1}`"
-                  @click="
-                    slot.persisted &&
-                    emit('preview', {
-                      type: 'conversation',
-                      item: turn.id,
-                      index: slot.index,
-                    })
-                  "
-                  @contextmenu.prevent="
-                    slot.persisted &&
-                    emit(
-                      'context-menu',
-                      $event,
-                      slot.src,
-                      turn.imagePaths?.[slot.index],
-                    )
-                  "
-                />
-                <div v-else class="generation-chat-image-placeholder">
-                  <span class="generation-live-spinner"></span>
-                  <b>正在生成中...</b>
+            <span class="conversation-load-spinner"></span>
+            <span>正在加载更早的对话...</span>
+          </div>
+          <article
+            v-for="(turn, turnIndex) in conversationHistory"
+            :key="turn.id"
+            :data-conversation-id="turn.id"
+            class="generation-chat-turn"
+            :class="[`status-${turn.status}`, `mode-${turn.mode}`]"
+          >
+            <div class="generation-chat-message user">
+              <div class="generation-chat-bubble generation-chat-user-bubble">
+                <div class="generation-chat-user-head">
+                  <b>第 {{ turnDisplayIndex(turnIndex) }} 轮</b>
+                  <small>{{ turnTime(turn) }}</small>
                 </div>
-                <span
-                  v-if="turnPreviewSlots(turn).length > 1"
-                  class="slot-index"
+                <p>{{ turn.prompt }}</p>
+                <div class="generation-chat-user-foot">
+                  <small>{{ turnMeta(turn) }}</small>
+                  <div class="generation-chat-prompt-actions">
+                    <button
+                      type="button"
+                      title="复制这条提示词"
+                      aria-label="复制这条提示词"
+                      @click="emit('copy-prompt', turn)"
+                    >
+                      <Copy aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      title="回填到创作面板继续编辑"
+                      aria-label="回填到创作面板继续编辑"
+                      @click="emit('edit-prompt', turn)"
+                    >
+                      <Pencil aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      class="danger"
+                      title="删除这轮对话记录，不删除作品库图片"
+                      aria-label="删除这轮对话记录，不删除作品库图片"
+                      @click="emit('delete-conversation', turn)"
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <img
+                class="generation-chat-avatar user"
+                :src="userAvatar"
+                alt="用户头像"
+              />
+            </div>
+            <div class="generation-chat-message assistant">
+              <img
+                class="generation-chat-avatar assistant"
+                :src="aiAvatar"
+                alt="Loomora AI 头像"
+              />
+              <div
+                class="generation-chat-bubble generation-chat-assistant-bubble"
+                :style="turnPreviewStyle(turn)"
+              >
+                <div class="generation-chat-response-head">
+                  <div class="generation-chat-response-title">
+                    <b>{{ turnStatusText(turn) }}</b>
+                  </div>
+                  <small>{{ turnTime(turn) }}</small>
+                </div>
+                <div class="generation-chat-response-meta">
+                  {{ turnMeta(turn) }}
+                </div>
+                <div
+                  v-if="
+                    turn.status === 'running' ||
+                    turn.status === 'error' ||
+                    turn.images?.length
+                  "
+                  class="generation-chat-images"
+                  :class="{
+                    single: turnPreviewSlots(turn).length === 1,
+                    running: turn.status === 'running',
+                  }"
+                  aria-live="polite"
                 >
-                  {{ slot.index + 1 }}
-                </span>
+                  <div
+                    v-for="slot in turnPreviewSlots(turn)"
+                    :key="`${turn.id}-${slot.index}`"
+                    class="generation-chat-image-slot"
+                    :class="{
+                      loading: !slot.src,
+                      failed: slot.failed,
+                      previewing: slot.src && !slot.persisted,
+                      clickable: slot.persisted,
+                    }"
+                  >
+                    <img
+                      v-if="slot.src"
+                      :src="slot.src"
+                      :alt="`生成图片 ${slot.index + 1}`"
+                      @click="
+                        slot.persisted &&
+                        emit('preview', {
+                          type: 'conversation',
+                          item: turn.id,
+                          index: slot.index,
+                        })
+                      "
+                      @contextmenu.prevent="
+                        slot.persisted &&
+                        emit(
+                          'context-menu',
+                          $event,
+                          slot.src,
+                          turn.imagePaths?.[slot.index],
+                        )
+                      "
+                    />
+                    <div
+                      v-else
+                      class="generation-chat-image-placeholder"
+                      :class="{ failed: slot.failed }"
+                    >
+                      <CircleX v-if="slot.failed" aria-hidden="true" />
+                      <span v-else class="generation-live-spinner"></span>
+                      <b>{{ slot.failed ? '生成失败' : '正在生成中...' }}</b>
+                    </div>
+                    <span
+                      v-if="turnPreviewSlots(turn).length > 1"
+                      class="slot-index"
+                    >
+                      {{ slot.index + 1 }}
+                    </span>
+                  </div>
+                </div>
+                <div
+                  v-if="turn.status === 'done' && turn.images?.length"
+                  class="generation-chat-result-actions"
+                >
+                  <button
+                    type="button"
+                    :title="
+                      turn.images.length > 1
+                        ? `将这 ${turn.images.length} 张图片作为参考图`
+                        : '将图片作为参考图'
+                    "
+                    aria-label="将生成图片作为参考图"
+                    @click="emit('reference-conversation-image', turn)"
+                  >
+                    <ImagePlus aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    title="按这轮对话重新生成"
+                    aria-label="按这轮对话重新生成"
+                    @click="emit('regenerate-conversation', turn)"
+                  >
+                    <RefreshCw aria-hidden="true" />
+                  </button>
+                  <button
+                    v-if="turn.imagePaths?.length || turn.folder"
+                    type="button"
+                    :title="`在文件夹中显示：${turn.imagePaths?.[0] || turn.folder}`"
+                    aria-label="在文件夹中显示生成图片"
+                    @click="emit('open-conversation-folder', turn)"
+                  >
+                    <FolderOpen aria-hidden="true" />
+                  </button>
+                </div>
+                <button
+                  v-if="turn.status === 'error'"
+                  type="button"
+                  class="generation-chat-retry-button"
+                  :disabled="liveActive"
+                  :title="
+                    liveActive ? '已有图片正在生成' : '按本轮参数重新生成'
+                  "
+                  aria-label="按本轮参数重新生成"
+                  @click="emit('regenerate-conversation', turn)"
+                >
+                  <RefreshCw aria-hidden="true" />
+                  <span>{{ liveActive ? '正在生成中' : '重新生成' }}</span>
+                </button>
               </div>
             </div>
-            <div
-              v-if="turn.status === 'done' && turn.images?.length"
-              class="generation-chat-result-actions"
-            >
-              <button
-                type="button"
-                title="按这轮对话重新生成"
-                aria-label="按这轮对话重新生成"
-                @click="emit('regenerate-conversation', turn)"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M17 3l4 4-4 4" />
-                  <path d="M3 11V9a2 2 0 0 1 2-2h16" />
-                  <path d="M7 21l-4-4 4-4" />
-                  <path d="M21 13v2a2 2 0 0 1-2 2H3" />
-                </svg>
-              </button>
-              <button
-                v-if="turn.imagePaths?.length || turn.folder"
-                type="button"
-                :title="`在文件夹中显示：${turn.imagePaths?.[0] || turn.folder}`"
-                aria-label="在文件夹中显示生成图片"
-                @click="emit('open-conversation-folder', turn)"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M3 7.5h6l2 2h10v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5Z"
-                  />
-                  <path d="M3 7.5V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1.5" />
-                  <path d="m12 12 2 2-2 2" />
-                  <path d="M8 14h6" />
-                </svg>
-              </button>
-            </div>
-            <div
-              v-if="turn.status !== 'running' && !turn.images?.length"
-              class="generation-chat-result-empty"
-            >
-              <span>{{
-                turn.status === 'error'
-                  ? '生成失败'
-                  : turn.status === 'cancelled'
-                    ? '已取消'
-                    : '未生成图片'
-              }}</span>
-            </div>
+          </article>
+          <div
+            v-if="
+              conversationLoadDirection === 'newer' ||
+              conversationLoadDirection === 'latest'
+            "
+            class="conversation-load-indicator bottom"
+            role="status"
+          >
+            <span class="conversation-load-spinner"></span>
+            <span>{{
+              conversationLoadDirection === 'latest'
+                ? '正在回到最新对话...'
+                : '正在加载更新的对话...'
+            }}</span>
           </div>
         </div>
-      </article>
-      <div
-        v-if="
-          conversationLoadDirection === 'newer' ||
-          conversationLoadDirection === 'latest'
-        "
-        class="conversation-load-indicator bottom"
-        role="status"
-      >
-        <span class="conversation-load-spinner"></span>
-        <span>{{
-          conversationLoadDirection === 'latest'
-            ? '正在回到最新对话...'
-            : '正在加载更新的对话...'
-        }}</span>
-      </div>
+      </Transition>
     </div>
     <div
       v-else
+      ref="libraryGallery"
       class="gallery library-gallery"
       :style="{ '--library-column-count': galleryColumnCount }"
       :class="{
@@ -865,24 +1247,28 @@ onBeforeUnmount(() => {
       @drop.prevent="onDrop"
     >
       <div v-if="dragActive" class="library-drop-overlay">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 3v12" />
-          <path d="m8 9 4-4 4 4" />
-          <path d="M5 19h14" />
-        </svg>
+        <Upload aria-hidden="true" />
         <b>松手即可导入图片</b>
         <small>支持 JPG、PNG、WEBP，可一次拖入多张</small>
       </div>
       <div
         v-for="(column, columnIndex) in galleryLoading || !gallery.length
           ? []
-          : galleryColumns"
+          : virtualGalleryColumns"
         :key="columnIndex"
         class="library-gallery-column"
       >
+        <div
+          v-if="column.topSpacer"
+          class="gallery-virtual-spacer"
+          :style="{ height: `${column.topSpacer}px` }"
+          aria-hidden="true"
+        ></div>
         <article
-          v-for="item in column"
+          v-for="item in column.items"
           :key="item.path"
+          :ref="(element) => setGalleryCardRef(element, item)"
+          :data-gallery-path="item.path"
           class="gallery-card"
           :class="{ selected: isSelected(item.path) }"
         >
@@ -895,11 +1281,14 @@ onBeforeUnmount(() => {
             :aria-label="isSelected(item.path) ? '取消勾选' : '勾选图片'"
             @click.stop="emit('toggle-selection', item)"
           >
-            <span></span>
+            <Check v-if="isSelected(item.path)" aria-hidden="true" />
           </button>
           <img
             :src="item.data"
             :alt="item.name"
+            loading="lazy"
+            decoding="async"
+            fetchpriority="low"
             @click="
               gallerySelectionMode
                 ? emit('toggle-selection', item)
@@ -914,6 +1303,12 @@ onBeforeUnmount(() => {
             ><small>{{ item.date }}</small>
           </div>
         </article>
+        <div
+          v-if="column.bottomSpacer"
+          class="gallery-virtual-spacer"
+          :style="{ height: `${column.bottomSpacer}px` }"
+          aria-hidden="true"
+        ></div>
       </div>
       <div v-if="galleryLoading" class="gallery-loading" role="status">
         <span class="gallery-loading-spinner"></span><b>正在加载作品库</b

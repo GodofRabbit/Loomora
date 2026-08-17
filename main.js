@@ -1,9 +1,21 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const path = require('path');
-const { registerGalleryHandlers } = require('./electron/gallery');
+const {
+  registerGalleryHandlers,
+  registerGalleryProtocol,
+  registerGalleryScheme,
+} = require('./electron/gallery');
 const { registerGenerationHandler } = require('./electron/generation');
+const {
+  destroyWorker: destroyOcrWorker,
+  registerOcrHandlers,
+} = require('./electron/ocr');
+const APP_ICON_PATH = path.join(__dirname, 'renderer', 'assets', 'logo.png');
+let applicationIcon;
+let mainWindow;
 
 function createWindow() {
+  const isMac = process.platform === 'darwin';
   const window = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -11,17 +23,31 @@ function createWindow() {
     minHeight: 700,
     backgroundColor: '#070817',
     autoHideMenuBar: true,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#0b0818',
-      symbolColor: '#eee8fa',
-      height: 36,
-    },
+    ...(applicationIcon?.isEmpty?.() === false
+      ? { icon: applicationIcon }
+      : {}),
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset',
+          trafficLightPosition: { x: 16, y: 11 },
+        }
+      : {
+          titleBarStyle: 'hidden',
+          titleBarOverlay: {
+            color: '#0b0818',
+            symbolColor: '#eee8fa',
+            height: 36,
+          },
+        }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  mainWindow = window;
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = undefined;
   });
   window.setMenuBarVisibility(false);
   process.env.VITE_DEV_SERVER_URL
@@ -29,15 +55,30 @@ function createWindow() {
     : window.loadFile(path.join(__dirname, 'renderer-dist', 'index.html'));
 }
 
+registerGalleryScheme();
 registerGalleryHandlers();
 registerGenerationHandler();
+registerOcrHandlers();
+ipcMain.handle('get-app-info', () => ({
+  name: app.getName(),
+  version: app.getVersion(),
+  author: '伟大的兔神',
+  email: 'believe_rl@163.com',
+}));
 
 app.whenReady().then(() => {
+  applicationIcon = nativeImage.createFromPath(APP_ICON_PATH);
+  if (process.platform === 'darwin' && applicationIcon.isEmpty() === false) {
+    app.dock?.setIcon(applicationIcon);
+  }
+  registerGalleryProtocol();
   createWindow();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   });
 });
+
+app.on('before-quit', () => destroyOcrWorker('应用正在退出'));
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

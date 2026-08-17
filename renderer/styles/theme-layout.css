@@ -49,20 +49,51 @@ body {
   top: var(--window-titlebar-height);
 }
 .brand {
+  align-items: center;
+  padding: 0;
+  border: 0;
   gap: 10px;
+  background: transparent;
   color: var(--text);
+  cursor: pointer;
+  font-family: Georgia, serif;
   font-size: 28px;
+  line-height: 1;
+  text-align: left;
+}
+.brand:hover:not(:disabled) {
+  transform: none;
+}
+.brand:focus-visible {
+  outline: 2px solid rgba(183, 138, 255, 0.72);
+  outline-offset: 5px;
+  border-radius: 6px;
+}
+.brand b,
+.brand-mark {
+  transition:
+    color 0.22s ease,
+    filter 0.28s ease,
+    transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.brand:hover b {
+  color: #fff;
+}
+.brand:hover .brand-mark {
+  filter: drop-shadow(0 6px 15px rgba(143, 92, 232, 0.34));
+  transform: translateY(-2px) scale(1.045) rotate(-2deg);
 }
 .brand-mark {
   display: block;
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
+  width: 60px;
+  height: 60px;
+  flex: 0 0 60px;
   border-radius: 50%;
   background-color: transparent;
   background-image: url('../assets/logo.png');
   background-size: contain;
   background-repeat: no-repeat;
+  transform: translateY(-2px);
 }
 .brand-mark::before {
   content: none;
@@ -115,6 +146,15 @@ body {
   line-height: 1;
   box-shadow: none;
 }
+.header-actions {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+  gap: 4px;
+}
+.header-actions .config-btn {
+  margin-left: 0;
+}
 .config-btn svg {
   width: 24px;
   height: 24px;
@@ -134,13 +174,21 @@ body {
   padding-bottom: 84px;
 }
 .app-shell.gallery-view {
-  --gallery-center-width: min(1180px, calc(100vw - 424px));
-  --gallery-timeline-width: 176px;
-  --gallery-actions-width: 96px;
-  --gallery-rail-gap: 18px;
+  --gallery-composition-gutter: max(20px, calc((100vw - 1400px) / 2));
+  --gallery-center-width: min(1248px, calc(100vw - 192px));
+  --gallery-timeline-width: 120px;
+  --gallery-rail-gap: 4px;
+  --gallery-rail-top: calc(
+    var(--window-titlebar-height) + var(--topbar-height) + 161px
+  );
 }
 .app-shell.gallery-view main {
   width: var(--gallery-center-width);
+  margin-right: auto;
+  margin-left: calc(
+    var(--gallery-composition-gutter) + var(--gallery-timeline-width) +
+      var(--gallery-rail-gap)
+  );
   padding-left: 0;
 }
 .app-shell.inspiration-view .content-scroll {
@@ -187,15 +235,25 @@ body {
   max-height: none;
   margin-top: 0;
   flex: 1 1 auto;
+  padding-right: clamp(12px, 2vw, 28px);
+  padding-left: clamp(12px, 2vw, 28px);
   padding-bottom: clamp(380px, 44vh, 560px);
+  transition: padding-bottom 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.app-shell.create-view:has(.create-card.compact) .generation-chat {
+  padding-bottom: clamp(88px, 10vh, 112px);
 }
 .app-shell.create-view .create-card {
   position: absolute;
   right: 0;
   bottom: 18px;
   left: 0;
-  width: min(1180px, 100%);
+  width: min(1080px, calc(100% - 32px));
   margin: 0 auto;
+}
+.app-shell.create-start-view .create-card {
+  bottom: clamp(44px, 8vh, 88px);
+  width: min(1040px, calc(100% - 48px));
 }
 .intro {
   padding: 68px 0 38px;
@@ -235,19 +293,17 @@ body {
   max-height: 620px;
   overflow: hidden;
   padding: 24px 28px 22px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: linear-gradient(
-    125deg,
-    rgba(31, 22, 57, 0.92),
-    rgba(9, 12, 28, 0.96) 72%
-  );
+  border: 1px solid rgba(174, 137, 242, 0.32);
+  border-radius: 12px;
+  background: rgba(13, 12, 24, 0.94);
   box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.56),
-    0 0 32px rgba(109, 58, 200, 0.16) inset;
-  backdrop-filter: blur(22px) saturate(115%);
+    0 24px 64px rgba(0, 0, 0, 0.46),
+    0 1px 0 rgba(255, 255, 255, 0.035) inset;
+  backdrop-filter: blur(24px) saturate(108%);
   transform-origin: bottom center;
   transition:
+    width 0.46s cubic-bezier(0.22, 1, 0.36, 1),
+    bottom 0.46s cubic-bezier(0.22, 1, 0.36, 1),
     max-height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
     max-width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
     padding 0.24s ease,
@@ -266,6 +322,12 @@ body {
   background: rgba(17, 15, 31, 0.94);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.42);
   transform: translateY(2px);
+}
+.create-card.start-mode {
+  border-color: rgba(174, 137, 242, 0.38);
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(118, 75, 192, 0.08);
 }
 .create-card .card-title,
 .create-card .reference-list,
@@ -291,24 +353,12 @@ body {
 .card-title h2 {
   font-size: 22px;
 }
-.card-title > div span {
+.card-title-icon {
   color: var(--violet);
-  text-shadow: 0 0 14px rgba(154, 104, 255, 0.8);
-}
-.status {
-  max-width: 52%;
-  min-height: 28px;
-  padding: 6px 10px;
-  overflow: hidden;
-  border: 1px solid rgba(150, 104, 255, 0.26);
-  border-radius: 7px;
-  background: rgba(66, 39, 111, 0.36);
-  color: #bdb5ce;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  filter: drop-shadow(0 0 7px rgba(154, 104, 255, 0.8));
 }
 .prompt-box {
+  position: relative;
   margin-top: 16px;
   border: 1px solid rgba(145, 88, 255, 0.72);
   border-radius: 8px;
@@ -349,9 +399,27 @@ body {
 .create-card.compact .prompt-box textarea {
   height: 40px;
   min-height: 40px;
-  padding: 10px 15px;
+  padding: 10px 15px 10px 48px;
   overflow: hidden;
   resize: none;
+}
+.compact-prompt-icon {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 9px;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border-radius: 8px;
+  background: rgba(124, 80, 190, 0.18);
+  color: #b895f0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  filter: drop-shadow(0 0 7px rgba(154, 104, 255, 0.35));
+}
+.create-card.compact .prompt-box textarea::placeholder {
+  color: #a49bad;
 }
 .prompt-box textarea::placeholder {
   color: #827c91;
@@ -382,11 +450,17 @@ body {
 }
 .control-row {
   grid-template-columns:
-    minmax(132px, 0.9fr) minmax(198px, 1.28fr) minmax(150px, 0.98fr)
-    minmax(88px, 0.58fr) minmax(142px, 0.9fr) minmax(142px, 0.88fr)
-    minmax(168px, 1fr);
-  gap: 10px;
+    minmax(132px, 0.96fr) minmax(162px, 1.25fr) minmax(108px, 0.86fr)
+    minmax(80px, 0.62fr) minmax(130px, 1fr) minmax(136px, 1.02fr)
+    minmax(154px, 1.1fr);
+  gap: 7px;
   margin-top: 18px;
+}
+.control-row > * {
+  min-width: 0;
+}
+.model-control .dropdown-select-trigger {
+  font-size: 12px;
 }
 .control-row label {
   gap: 8px;

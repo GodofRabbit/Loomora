@@ -7,92 +7,55 @@ export function useOcr(showToast) {
   const lines = ref([]);
   const error = ref('');
   const sourceName = ref('');
-  let paddleOcr;
-  let paddleOcrReady;
-  let fetchInstalled = false;
   let runId = 0;
-  let running = false;
 
-  function installLocalModelFetch() {
-    if (fetchInstalled) return;
-    const originalFetch = window.fetch.bind(window);
-    // PaddleOCR expects URLs, while Electron serves model bytes over IPC.
-    window.fetch = async (input, options) => {
-      const url = new URL(
-        typeof input === 'string' ? input : input.url,
-        window.location.href,
-      );
-      if (url.hostname !== 'loomora-ocr.local') {
-        return originalFetch(input, options);
-      }
-      const relativePath = url.pathname.replace(/^\/models\/ocr\//, '');
-      const bytes = await window.forge.readOcrModel(relativePath);
-      return new Response(bytes, {
-        status: 200,
-        headers: {
-          'Content-Type': relativePath.endsWith('.json')
-            ? 'application/json'
-            : 'application/octet-stream',
-        },
-      });
-    };
-    fetchInstalled = true;
+  async function resolveImageSource(source) {
+    if (typeof source !== 'string' || !source.startsWith('loomora-gallery:')) {
+      return source;
+    }
+    try {
+      const filePath = new URL(source).searchParams.get('path');
+      if (!filePath) throw new Error('图片路径无效');
+      return await window.forge.readGalleryImage(filePath);
+    } catch {
+      throw new Error('无法读取作品库中的待识别图片');
+    }
   }
 
-  async function ensureReady() {
-    if (paddleOcrReady) return paddleOcrReady;
-    paddleOcrReady = (async () => {
-      installLocalModelFetch();
-      globalThis.Module ||= {};
-      paddleOcr = await import('@paddlejs-models/ocr');
-      const modelRoot = 'https://loomora-ocr.local/models/ocr';
-      await paddleOcr.init(
-        `${modelRoot}/detection/model.json`,
-        `${modelRoot}/recognition/model.json`,
-      );
-    })().catch((loadError) => {
-      paddleOcrReady = undefined;
-      throw loadError;
-    });
-    return paddleOcrReady;
-  }
-
-  function loadImage(source) {
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('无法读取待识别图片'));
-      image.src = source;
-    });
+  function describeOcrError(value) {
+    const message = String(value?.message || value || '');
+    if (/webgl|gl_|graphics|texture|gpu/i.test(message)) {
+      return '图形加速初始化失败，请重启应用；若问题持续，请更新系统后再试';
+    }
+    if (/ocr model|model|chunk_|read-ocr-model/i.test(message)) {
+      return '本地识别模型读取失败，请重新安装应用后再试';
+    }
+    if (/memory|allocation|out of bounds/i.test(message)) {
+      return '图片过大或可用内存不足，请缩小图片后重试';
+    }
+    return formatUserMessage(value, '文字识别失败，请稍后重试');
   }
 
   async function recognize(source, name = '图片') {
-    if (!source || running) return;
+    if (!source) return;
     const currentRun = ++runId;
-    running = true;
     open.value = true;
     busy.value = true;
     lines.value = [];
     error.value = '';
     sourceName.value = name;
     try {
-      await ensureReady();
-      const result = await paddleOcr.recognize(await loadImage(source));
+      const safeSource = await resolveImageSource(source);
       if (currentRun !== runId) return;
-      lines.value = (Array.isArray(result?.text) ? result.text : [result?.text])
-        .flat(Infinity)
-        .map((line) => String(line || '').trim())
-        .filter(Boolean);
+      const result = await window.forge.recognizeText({ source: safeSource });
+      if (currentRun !== runId) return;
+      lines.value = Array.isArray(result?.lines) ? result.lines : [];
     } catch (recognitionError) {
       if (currentRun !== runId) return;
       console.error('PaddleOCR 文字识别失败', recognitionError);
-      error.value = formatUserMessage(
-        recognitionError,
-        '文字识别失败，请稍后重试',
-      );
+      error.value = describeOcrError(recognitionError);
     } finally {
-      running = false;
-      busy.value = false;
+      if (currentRun === runId) busy.value = false;
     }
   }
 
@@ -110,13 +73,30 @@ export function useOcr(showToast) {
     }
   }
 
-  function close() {
+  function cancel() {
+    const wasBusy = busy.value;
     runId += 1;
     open.value = false;
-    busy.value = running;
+    busy.value = false;
     lines.value = [];
     error.value = '';
+    window.forge.cancelOcr().catch(() => {});
+    if (wasBusy) showToast('已取消本次文字识别');
   }
 
-  return { open, busy, lines, error, sourceName, recognize, copyText, close };
+  function close() {
+    cancel();
+  }
+
+  return {
+    open,
+    busy,
+    lines,
+    error,
+    sourceName,
+    recognize,
+    copyText,
+    cancel,
+    close,
+  };
 }

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { Search } from 'lucide-vue-next';
 import { inspirationCards } from '../data/inspirations';
 import { distributeGalleryItems } from '../utils/gallery';
 
@@ -83,10 +84,7 @@ function ratioStyle(ratio) {
           <h1>灵感广场</h1>
         </div>
         <div class="inspiration-search">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m16.5 16.5 4 4" />
-          </svg>
+          <Search aria-hidden="true" />
           <input
             v-model="search"
             type="search"

@@ -1,5 +1,15 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import {
+  ImagePlus,
+  MessageSquarePlus,
+  Minus,
+  Plus,
+  Sparkles,
+  WandSparkles,
+  X,
+  ChevronsDown,
+} from 'lucide-vue-next';
 import DropdownSelect from './DropdownSelect.vue';
 
 const props = defineProps({
@@ -23,12 +33,17 @@ const props = defineProps({
   modelIsGpt: Boolean,
   modelIsGemini: Boolean,
   busy: Boolean,
+  startMode: Boolean,
   collapseSignal: { type: Number, default: 0 },
   expandSignal: { type: Number, default: 0 },
+  showBottomButton: Boolean,
 });
 const composerFocused = ref(false);
 const composerHost = ref(null);
-const compactComposer = computed(() => !composerFocused.value && !props.busy);
+const promptInput = ref(null);
+const compactComposer = computed(
+  () => !props.startMode && !composerFocused.value,
+);
 const emit = defineEmits([
   'update:prompt',
   'update:model',
@@ -42,7 +57,16 @@ const emit = defineEmits([
   'preview-reference',
   'generate',
   'cancel',
+  'scroll-bottom',
+  'composer-focus-change',
 ]);
+
+function setComposerFocused(value) {
+  const focused = Boolean(value);
+  if (composerFocused.value === focused) return;
+  composerFocused.value = focused;
+  emit('composer-focus-change', focused);
+}
 
 function onComposerFocusOut(event) {
   if (
@@ -51,11 +75,11 @@ function onComposerFocusOut(event) {
   ) {
     return;
   }
-  composerFocused.value = false;
+  setComposerFocused(false);
 }
 
 function collapseComposer() {
-  composerFocused.value = false;
+  setComposerFocused(false);
   const activeElement = document.activeElement;
   if (activeElement && composerHost.value?.contains(activeElement)) {
     activeElement.blur();
@@ -71,8 +95,10 @@ watch(
 
 watch(
   () => props.expandSignal,
-  () => {
-    composerFocused.value = true;
+  async () => {
+    setComposerFocused(true);
+    await nextTick();
+    promptInput.value?.focus({ preventScroll: true });
   },
 );
 </script>
@@ -82,22 +108,35 @@ watch(
   <section
     ref="composerHost"
     class="create-card"
-    :class="{ compact: compactComposer }"
-    @focusin="composerFocused = true"
+    :class="{
+      compact: compactComposer,
+      'start-mode': startMode,
+      'has-bottom-button': showBottomButton,
+    }"
+    @focusin="setComposerFocused(true)"
     @focusout="onComposerFocusOut"
   >
     <div class="card-title">
       <div>
-        <span>✦</span>
+        <Sparkles class="card-title-icon" aria-hidden="true" />
         <h2>快速创作</h2>
       </div>
-      <span class="status"><slot name="status">准备就绪</slot></span>
     </div>
     <div class="prompt-box">
+      <MessageSquarePlus
+        v-if="compactComposer"
+        class="compact-prompt-icon"
+        aria-hidden="true"
+      />
       <textarea
+        ref="promptInput"
         :value="prompt"
         :maxlength="promptLimit"
-        placeholder="描述你的创意画面，例如：金色晨曦洒在云海之上，未来城市与自然共生"
+        :placeholder="
+          compactComposer
+            ? '描述你的创意画面...'
+            : '描述你的创意画面，例如：金色晨曦洒在云海之上，未来城市与自然共生'
+        "
         @input="emit('update:prompt', $event.target.value)"
       ></textarea>
       <div class="prompt-tools">
@@ -106,16 +145,7 @@ watch(
           :disabled="maxReferences === 0"
           @click="emit('pick-reference')"
         >
-          <svg
-            class="reference-upload-icon"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <rect x="3.5" y="4" width="14" height="16" rx="2" />
-            <circle cx="8" cy="9" r="1.5" />
-            <path d="m5.5 17 3.5-3.5 2.5 2.5 2-2 2.5 2.5" />
-            <path d="M19 8v7M15.5 11.5h7" />
-          </svg>
+          <ImagePlus class="reference-upload-icon" aria-hidden="true" />
           添加参考图（{{ reference.length }}/{{ maxReferences }}）
         </button>
         <span>{{ counter }}</span>
@@ -134,7 +164,14 @@ watch(
           @click="emit('preview-reference', index)"
         />
         <span>{{ item.name }}</span>
-        <button type="button" @click="emit('remove-reference', index)">×</button>
+        <button
+          type="button"
+          title="移除参考图"
+          aria-label="移除参考图"
+          @click="emit('remove-reference', index)"
+        >
+          <X aria-hidden="true" />
+        </button>
       </div>
     </div>
     <div class="control-row">
@@ -186,14 +223,14 @@ watch(
             type="button"
             @click="emit('update:count', Math.max(1, count - 1))"
           >
-            −
+            <Minus aria-hidden="true" />
           </button>
           <b>{{ count }}</b>
           <button
             type="button"
             @click="emit('update:count', Math.min(maxCount, count + 1))"
           >
-            ＋
+            <Plus aria-hidden="true" />
           </button>
         </div>
       </label>
@@ -204,7 +241,8 @@ watch(
           :disabled="busy"
           @click="emit('generate')"
         >
-          ✦ {{ busy ? (count > 1 ? '批量生成中…' : '流式生成中…') : (count > 1 ? '批量生成' : '流式生成') }}
+          <WandSparkles aria-hidden="true" />
+          {{ busy ? '生成中...' : count > 1 ? '批量生成' : '流式生成' }}
         </button>
         <button
           v-if="busy"
@@ -214,9 +252,20 @@ watch(
           aria-label="取消生成"
           @click="emit('cancel')"
         >
-          ×
+          <X aria-hidden="true" />
         </button>
       </div>
     </div>
+    <button
+      v-if="showBottomButton"
+      type="button"
+      class="conversation-bottom-button"
+      title="回到最新对话"
+      aria-label="回到最新对话"
+      @click="emit('scroll-bottom')"
+    >
+      <ChevronsDown aria-hidden="true" />
+      <span>回到底部</span>
+    </button>
   </section>
 </template>

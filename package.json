@@ -2,6 +2,7 @@
   "name": "Loomora",
   "version": "1.0.0",
   "description": "文生图工作台",
+  "author": "伟大的兔神 <believe_rl@163.com>",
   "main": "main.js",
   "scripts": {
     "format": "prettier --write .",
@@ -18,6 +19,7 @@
   },
   "dependencies": {
     "@paddlejs-models/ocr": "^1.2.4",
+    "lucide-vue-next": "^0.468.0",
     "tui-image-editor": "^3.15.3",
     "vue": "^3.4.31"
   },
@@ -38,12 +40,15 @@
       "main.js",
       "preload.js",
       "electron/**/*",
+      "renderer/assets/logo.png",
       "renderer-dist/**/*"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": "nsis"
     },
     "mac": {
+      "icon": "build/icon.icns",
       "target": "dmg",
       "category": "public.app-category.graphics-design"
     }

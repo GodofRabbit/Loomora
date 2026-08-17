@@ -1,5 +1,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('forge', {
+  platform: process.platform,
+  getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   pickImage: () => ipcRenderer.invoke('pick-image'),
   generate: (p) => ipcRenderer.invoke('generate', p),
   cancelGenerate: () => ipcRenderer.invoke('cancel-generate'),
@@ -9,6 +11,13 @@ contextBridge.exposeInMainWorld('forge', {
     return () => ipcRenderer.removeListener('generation-update', listener);
   },
   listGallery: () => ipcRenderer.invoke('list-gallery'),
+  getGalleryStorage: () => ipcRenderer.invoke('get-gallery-storage'),
+  chooseGalleryStorage: (currentPath) =>
+    ipcRenderer.invoke('choose-gallery-storage', currentPath),
+  setGalleryStorage: (directory) =>
+    ipcRenderer.invoke('set-gallery-storage', directory),
+  readGalleryImage: (filePath) =>
+    ipcRenderer.invoke('read-gallery-image', filePath),
   listConversationHistory: (payload) =>
     ipcRenderer.invoke('list-conversation-history', payload),
   saveConversationTurn: (turn) =>
@@ -30,11 +39,15 @@ contextBridge.exposeInMainWorld('forge', {
   saveEditedImage: (payload) =>
     ipcRenderer.invoke('save-edited-image', payload),
   downloadImage: (payload) => ipcRenderer.invoke('download-image', payload),
-  copyImage: (src) => ipcRenderer.invoke('copy-image', src),
+  copyImage: (src, filePath) =>
+    ipcRenderer.invoke('copy-image', { src, filePath }),
   copyText: (text) => ipcRenderer.invoke('copy-text', text),
   readOcrModel: (relativePath) =>
     ipcRenderer.invoke('read-ocr-model', relativePath),
-  deleteImage: (filePath) => ipcRenderer.invoke('delete-image', filePath),
+  recognizeText: (payload) => ipcRenderer.invoke('recognize-text', payload),
+  cancelOcr: () => ipcRenderer.invoke('cancel-ocr'),
+  deleteGalleryImages: (filePaths) =>
+    ipcRenderer.invoke('delete-gallery-images', filePaths),
   renameImage: (payload) => ipcRenderer.invoke('rename-image', payload),
   showImageInFolder: (filePath) =>
     ipcRenderer.invoke('show-image-in-folder', filePath),

@@ -48,6 +48,7 @@ const ratioLabels = {
 };
 const legacyOpenAiEndpointPattern = /^https:\/\/api\.openai\.com\/v1\/?$/i;
 const CONVERSATION_PAGE_SIZE = 10;
+const CONVERSATION_WINDOW_SIZE = CONVERSATION_PAGE_SIZE * 3;
 
 function normalizeEndpoint(value) {
   const endpoint = String(value || '').trim();
@@ -160,7 +161,7 @@ export function useGenerationForm({ status, showToast }) {
     };
   }
 
-  function createConversationTurn(total) {
+  function createConversationTurn(total, request) {
     if (conversationOffset.value !== 0) {
       conversationOffset.value = 0;
       conversationHistory.value = [];
@@ -168,14 +169,17 @@ export function useGenerationForm({ status, showToast }) {
     const turn = {
       id: `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       createdAt: Date.now(),
-      prompt: prompt.value.trim(),
-      model: normalizedModel.value,
-      ratio: ratio.value,
-      resolution: getRequestedSize(),
-      quality: quality.value,
-      outputFormat: outputFormat.value,
+      prompt: request.prompt.trim(),
+      model: request.model,
+      ratio: request.aspect,
+      resolution: request.size,
+      quality: request.quality,
+      outputFormat: request.outputFormat,
       count: total,
-      referenceCount: reference.value.length,
+      referenceCount: request.reference.length,
+      references: request.reference.map(({ name, data }) => ({ name, data })),
+      referencePaths: [],
+      referenceNames: request.reference.map(({ name }) => name),
       mode: total > 1 ? 'batch' : 'stream',
       status: 'running',
       message: '',
@@ -194,9 +198,9 @@ export function useGenerationForm({ status, showToast }) {
       completedAt: null,
     };
     conversationHistory.value.push(turn);
-    if (conversationHistory.value.length > conversationLimit.value) {
+    if (conversationHistory.value.length > CONVERSATION_WINDOW_SIZE) {
       conversationHistory.value = conversationHistory.value.slice(
-        -conversationLimit.value,
+        -CONVERSATION_WINDOW_SIZE,
       );
     }
     conversationTotal.value = Math.max(
@@ -225,7 +229,14 @@ export function useGenerationForm({ status, showToast }) {
   function normalizeConversationTurn(turn = {}) {
     const imagePaths = Array.isArray(turn.imagePaths) ? turn.imagePaths : [];
     const imagesValue = Array.isArray(turn.images) ? turn.images : [];
+    const referencePaths = Array.isArray(turn.referencePaths)
+      ? turn.referencePaths.map((item) => String(item || '')).filter(Boolean)
+      : [];
+    const referenceNames = Array.isArray(turn.referenceNames)
+      ? turn.referenceNames.map((item) => String(item || '参考图'))
+      : [];
     const total = Math.max(1, Number(turn.count) || imagePaths.length || 1);
+    const interrupted = turn.status === 'running';
     return {
       id: String(
         turn.id ||
@@ -239,12 +250,24 @@ export function useGenerationForm({ status, showToast }) {
       quality: String(turn.quality || 'auto'),
       outputFormat: String(turn.outputFormat || 'png'),
       count: total,
-      referenceCount: Math.max(0, Number(turn.referenceCount) || 0),
+      referenceCount: Math.max(
+        referencePaths.length,
+        Number(turn.referenceCount) || 0,
+      ),
+      references: [],
+      referencePaths,
+      referenceNames: referencePaths.map(
+        (_item, index) => referenceNames[index] || `参考图-${index + 1}`,
+      ),
       mode: turn.mode === 'batch' ? 'batch' : 'stream',
-      status: ['done', 'error', 'cancelled'].includes(turn.status)
-        ? turn.status
-        : 'done',
-      message: String(turn.message || ''),
+      status: interrupted
+        ? 'error'
+        : ['done', 'error', 'cancelled'].includes(turn.status)
+          ? turn.status
+          : 'done',
+      message: interrupted
+        ? '上次生成已中断，可重新生成'
+        : String(turn.message || ''),
       liveImage: '',
       images: imagesValue,
       imagePaths,
@@ -259,7 +282,9 @@ export function useGenerationForm({ status, showToast }) {
         partial: Math.max(0, Number(turn.progress?.partial) || 0),
       },
       folder: String(turn.folder || ''),
-      error: String(turn.error || ''),
+      error: interrupted
+        ? '上次生成已中断，可重新生成'
+        : String(turn.error || ''),
       completedAt: Number(turn.completedAt) || null,
     };
   }
@@ -269,6 +294,20 @@ export function useGenerationForm({ status, showToast }) {
       ? turn.imagePaths
           .map((itemPath) => String(itemPath || ''))
           .filter(Boolean)
+      : [];
+    const references = Array.isArray(turn.references)
+      ? turn.references
+          .map(({ name, data }) => ({
+            name: String(name || '参考图'),
+            data: String(data || ''),
+          }))
+          .filter((item) => item.data.startsWith('data:image/'))
+      : [];
+    const referencePaths = Array.isArray(turn.referencePaths)
+      ? turn.referencePaths.map((item) => String(item || '')).filter(Boolean)
+      : [];
+    const referenceNames = Array.isArray(turn.referenceNames)
+      ? turn.referenceNames.map((item) => String(item || '参考图'))
       : [];
     return {
       id: String(turn.id || ''),
@@ -281,7 +320,14 @@ export function useGenerationForm({ status, showToast }) {
       quality: String(turn.quality || ''),
       outputFormat: String(turn.outputFormat || ''),
       count: Math.max(1, Number(turn.count) || imagePaths.length || 1),
-      referenceCount: Math.max(0, Number(turn.referenceCount) || 0),
+      referenceCount: Math.max(
+        references.length,
+        referencePaths.length,
+        Number(turn.referenceCount) || 0,
+      ),
+      references,
+      referencePaths,
+      referenceNames,
       mode: turn.mode === 'batch' ? 'batch' : 'stream',
       status: ['done', 'error', 'cancelled', 'running'].includes(turn.status)
         ? turn.status
@@ -306,16 +352,33 @@ export function useGenerationForm({ status, showToast }) {
   async function persistConversationTurn(turn = activeConversationTurn()) {
     if (!turn || !window.forge?.saveConversationTurn) return;
     try {
-      await window.forge.saveConversationTurn(
+      const result = await window.forge.saveConversationTurn(
         serializableConversationTurn(turn),
       );
+      if (result?.turn) {
+        turn.referencePaths = [...(result.turn.referencePaths || [])];
+        turn.referenceNames = [...(result.turn.referenceNames || [])];
+        turn.referenceCount = turn.referencePaths.length;
+        if (turn.referencePaths.length) turn.references = [];
+      }
     } catch (error) {
       status.value = formatUserMessage(error, '创作对话保存失败，请稍后重试');
       showToast(status.value, 'error');
     }
   }
 
-  async function loadConversationHistory(offset = conversationOffset.value) {
+  function mergeConversationHistory(current, incoming) {
+    const turns = new Map();
+    for (const turn of [...current, ...incoming]) turns.set(turn.id, turn);
+    return Array.from(turns.values()).sort(
+      (left, right) => left.createdAt - right.createdAt,
+    );
+  }
+
+  async function loadConversationHistory(
+    offset = conversationOffset.value,
+    direction = 'replace',
+  ) {
     if (!window.forge?.listConversationHistory) return;
     conversationLoading.value = true;
     try {
@@ -328,9 +391,35 @@ export function useGenerationForm({ status, showToast }) {
         : Array.isArray(result?.items)
           ? result.items
           : [];
-      conversationHistory.value = items.map(normalizeConversationTurn);
-      conversationOffset.value =
+      const normalizedItems = items.map(normalizeConversationTurn);
+      const resultOffset =
         typeof result?.offset === 'number' ? result.offset : offset;
+      if (direction === 'older') {
+        let merged = mergeConversationHistory(
+          normalizedItems,
+          conversationHistory.value,
+        );
+        const trimmedCount = Math.max(
+          0,
+          merged.length - CONVERSATION_WINDOW_SIZE,
+        );
+        if (trimmedCount) merged = merged.slice(0, CONVERSATION_WINDOW_SIZE);
+        conversationHistory.value = merged;
+        conversationOffset.value += trimmedCount;
+      } else if (direction === 'newer') {
+        let merged = mergeConversationHistory(
+          conversationHistory.value,
+          normalizedItems,
+        );
+        if (merged.length > CONVERSATION_WINDOW_SIZE) {
+          merged = merged.slice(-CONVERSATION_WINDOW_SIZE);
+        }
+        conversationHistory.value = merged;
+        conversationOffset.value = resultOffset;
+      } else {
+        conversationHistory.value = normalizedItems;
+        conversationOffset.value = resultOffset;
+      }
       conversationTotal.value = Number(result?.total) || items.length;
       conversationLimit.value =
         Number(result?.limit) || conversationLimit.value;
@@ -354,6 +443,7 @@ export function useGenerationForm({ status, showToast }) {
     if (conversationLoading.value || !conversationHasOlder.value) return;
     return loadConversationHistory(
       conversationOffset.value + conversationHistory.value.length,
+      'older',
     );
   }
 
@@ -361,6 +451,7 @@ export function useGenerationForm({ status, showToast }) {
     if (conversationLoading.value || !conversationHasNewer.value) return;
     return loadConversationHistory(
       Math.max(0, conversationOffset.value - conversationLimit.value),
+      'newer',
     );
   }
 
@@ -497,8 +588,16 @@ export function useGenerationForm({ status, showToast }) {
         liveImage.value = '';
         generationMode.value = 'idle';
         updateActiveConversation((turn) => {
-          turn.status = phase === 'cancelled' ? 'cancelled' : 'done';
+          const failed =
+            phase !== 'cancelled' &&
+            (turn.status === 'error' ||
+              update.ok === false ||
+              Number(update.failed) > 0);
+          turn.status =
+            phase === 'cancelled' ? 'cancelled' : failed ? 'error' : 'done';
           turn.message = update.message || turn.message;
+          if (failed)
+            turn.error = update.message || turn.error || '图片生成失败';
           turn.liveImage = '';
           turn.completedAt = Date.now();
         });
@@ -506,24 +605,32 @@ export function useGenerationForm({ status, showToast }) {
     }
   }
 
-  function getRequestedSize() {
-    return resolution.value !== 'auto'
-      ? resolution.value
-      : sizeByRatio[ratio.value] || '1024x1024';
-  }
-
-  function getGenerationPayload() {
+  function getGenerationPayload(overrides = {}) {
+    const requestRatio = String(overrides.aspect || ratio.value || '1:1');
+    const requestSize =
+      overrides.size ||
+      (resolution.value !== 'auto'
+        ? resolution.value
+        : sizeByRatio[requestRatio] || '1024x1024');
+    const requestReference = Array.isArray(overrides.reference)
+      ? overrides.reference
+      : reference.value;
     return {
-      endpoint: endpoint.value,
-      apiKey: apiKey.value,
-      model: model.value,
-      prompt: prompt.value,
-      aspect: ratio.value,
-      size: getRequestedSize(),
-      quality: quality.value,
-      outputFormat: outputFormat.value,
-      count: Math.min(maxCount.value, Math.max(1, Number(count.value) || 1)),
-      reference: reference.value.map(({ name, data }) => ({ name, data })),
+      endpoint: String(overrides.endpoint || endpoint.value),
+      apiKey: String(overrides.apiKey || apiKey.value),
+      model: String(overrides.model || model.value),
+      prompt: String(overrides.prompt ?? prompt.value),
+      aspect: requestRatio,
+      size: String(requestSize),
+      quality: String(overrides.quality || quality.value || 'auto'),
+      outputFormat: String(
+        overrides.outputFormat || outputFormat.value || 'png',
+      ),
+      count: Math.min(
+        maxCount.value,
+        Math.max(1, Number(overrides.count ?? count.value) || 1),
+      ),
+      reference: requestReference.map(({ name, data }) => ({ name, data })),
     };
   }
 
@@ -568,17 +675,64 @@ export function useGenerationForm({ status, showToast }) {
       showToast(status.value, 'error');
       return;
     }
-    prompt.value = String(turn.prompt || '');
-    if (turn.model) model.value = String(turn.model);
-    if (turn.ratio) ratio.value = String(turn.ratio);
-    if (turn.resolution) resolution.value = String(turn.resolution);
-    quality.value = turn.quality || 'auto';
-    outputFormat.value = turn.outputFormat || 'png';
     const requestedCount = Number(options.count) || Number(turn.count) || 1;
-    count.value = Math.min(maxCount.value, Math.max(1, requestedCount));
-    reference.value = [];
-    status.value = '正在按历史记录重新生成...';
-    await generate();
+    const historicalRatio = String(turn.ratio || ratio.value || '1:1');
+    const historicalReferences = await loadConversationReferences(turn);
+    return generate({
+      onStart: options.onStart,
+      request: {
+        model: String(turn.model || model.value),
+        prompt: String(turn.prompt),
+        aspect: historicalRatio,
+        size:
+          turn.resolution && turn.resolution !== 'auto'
+            ? String(turn.resolution)
+            : sizeByRatio[historicalRatio] || '1024x1024',
+        quality: String(turn.quality || 'auto'),
+        outputFormat: String(turn.outputFormat || 'png'),
+        count: Math.min(maxCount.value, Math.max(1, requestedCount)),
+        reference: historicalReferences,
+      },
+    });
+  }
+
+  async function loadConversationReferences(turn = {}) {
+    const inMemory = Array.isArray(turn.references)
+      ? turn.references.filter((item) =>
+          String(item?.data || '').startsWith('data:image/'),
+        )
+      : [];
+    if (inMemory.length) {
+      return inMemory.map(({ name, data }) => ({
+        name: String(name || '参考图'),
+        data: String(data),
+      }));
+    }
+
+    const paths = Array.isArray(turn.referencePaths) ? turn.referencePaths : [];
+    const names = Array.isArray(turn.referenceNames) ? turn.referenceNames : [];
+    const restored = [];
+    let missing = 0;
+    for (let index = 0; index < paths.length; index++) {
+      try {
+        const data = await window.forge.readGalleryImage(paths[index]);
+        restored.push({
+          name: String(names[index] || `参考图-${index + 1}`),
+          data,
+        });
+      } catch {
+        missing += 1;
+      }
+    }
+    if (missing || (!paths.length && Number(turn.referenceCount) > 0)) {
+      showToast(
+        restored.length
+          ? `已恢复 ${restored.length} 张参考图，另有 ${missing} 张文件已丢失`
+          : '这条历史记录的参考图未保存或文件已丢失',
+        'error',
+      );
+    }
+    return restored;
   }
 
   function removeReference(index) {
@@ -635,16 +789,17 @@ export function useGenerationForm({ status, showToast }) {
     }
   }
 
-  async function generate() {
-    if (!prompt.value.trim()) {
+  async function generate({ onStart, request: requestOverrides = {} } = {}) {
+    const request = getGenerationPayload(requestOverrides);
+    if (!request.prompt.trim()) {
       status.value = '请输入提示词';
       return;
     }
-    if (!apiKey.value.trim()) {
+    if (!request.apiKey.trim()) {
       status.value = '请先填写 API Key';
       return;
     }
-    if (reference.value.length > maxReferences.value) {
+    if (request.reference.length > maxReferences.value) {
       status.value = `${normalizedModel.value} 最多支持 ${maxReferences.value} 张参考图`;
       return;
     }
@@ -655,11 +810,9 @@ export function useGenerationForm({ status, showToast }) {
 
     busy.value = true;
     resetGenerationState();
-    const total = Math.min(
-      maxCount.value,
-      Math.max(1, Number(count.value) || 1),
-    );
-    createConversationTurn(total);
+    const total = request.count;
+    createConversationTurn(total, request);
+    onStart?.();
     generationMode.value = total > 1 ? 'batch' : 'stream';
     generationProgress.value.total = total;
     status.value =
@@ -669,8 +822,9 @@ export function useGenerationForm({ status, showToast }) {
     updateActiveConversation((turn) => {
       turn.message = status.value;
     });
+    await persistConversationTurn();
     try {
-      const result = await window.forge.generate(getGenerationPayload());
+      const result = await window.forge.generate(request);
       if (typeof result?.images?.length === 'number' && result.images.length) {
         images.value = result.images;
       }
@@ -779,6 +933,7 @@ export function useGenerationForm({ status, showToast }) {
     syncConversationImagePaths,
     removeConversationImagePath,
     addReferenceFromImage,
+    loadConversationReferences,
     regenerateFromConversation,
     pickReference,
     removeReference,

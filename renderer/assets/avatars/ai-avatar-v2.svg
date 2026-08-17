@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="AI 机器人头像">
+  <defs>
+    <linearGradient id="bg" x1="14" y1="12" x2="178" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e7dcff"/>
+      <stop offset="1" stop-color="#b695ee"/>
+    </linearGradient>
+    <linearGradient id="bot" x1="47" y1="58" x2="145" y2="157" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#875bcb"/>
+      <stop offset="1" stop-color="#5e3ba2"/>
+    </linearGradient>
+  </defs>
+  <circle cx="96" cy="96" r="94" fill="url(#bg)"/>
+  <circle cx="96" cy="96" r="88" fill="none" stroke="#fff" stroke-opacity=".62" stroke-width="4"/>
+  <path d="M96 43V27" stroke="#67429e" stroke-linecap="round" stroke-width="6"/>
+  <circle cx="96" cy="21" r="9" fill="#f6ca63" stroke="#67429e" stroke-width="4"/>
+  <rect x="39" y="53" width="114" height="98" rx="28" fill="url(#bot)" stroke="#523485" stroke-width="5"/>
+  <path d="M39 86h-9a9 9 0 0 0-9 9v16a9 9 0 0 0 9 9h9m114-34h9a9 9 0 0 1 9 9v16a9 9 0 0 1-9 9h-9" fill="#f19ab1" stroke="#67429e" stroke-width="5"/>
+  <rect x="57" y="78" width="78" height="42" rx="16" fill="#29203c"/>
+  <circle cx="78" cy="99" r="8" fill="#f6ca63"/>
+  <circle cx="114" cy="99" r="8" fill="#f19ab1"/>
+  <path d="M72 135c14 10 34 10 48 0" fill="none" stroke="#f8eaff" stroke-linecap="round" stroke-width="5"/>
+  <path d="m96 61 5 10 11 2-8 8 2 11-10-5-10 5 2-11-8-8 11-2Z" fill="#f8eaff"/>
+  <rect x="63" y="157" width="19" height="9" rx="4.5" fill="#f6ca63"/>
+  <rect x="110" y="157" width="19" height="9" rx="4.5" fill="#f19ab1"/>
+</svg>
