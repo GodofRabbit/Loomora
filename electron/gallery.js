@@ -478,6 +478,8 @@ function sanitizeConversationTurn(turn = {}) {
     completedAt: Number(turn.completedAt) || null,
     prompt: String(turn.prompt || ''),
     model: String(turn.model || ''),
+    providerId: String(turn.providerId || 'openai-compatible'),
+    profileId: String(turn.profileId || 'openai-main'),
     ratio: String(turn.ratio || ''),
     resolution: String(turn.resolution || ''),
     quality: String(turn.quality || ''),

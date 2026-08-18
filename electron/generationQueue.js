@@ -94,6 +94,7 @@ function publicTask(task) {
     model: String(request.model || ''),
     providerId: String(request.providerId || 'openai-compatible'),
     profileId: String(request.profileId || 'openai-main'),
+    conversationId: String(request.conversationId || ''),
     count: Math.max(1, Number(request.count) || 1),
     aspect: String(request.aspect || ''),
     referenceCount: Array.isArray(task.references) ? task.references.length : 0,
@@ -115,6 +116,7 @@ function addTask(request = {}) {
     request: {
       providerId: String(request.providerId || 'openai-compatible'),
       profileId: String(request.profileId || 'openai-main'),
+      conversationId: String(request.conversationId || ''),
       endpoint: String(request.endpoint || ''),
       model: String(request.model || ''),
       prompt: String(request.prompt || ''),

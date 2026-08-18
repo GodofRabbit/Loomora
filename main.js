@@ -66,6 +66,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      devTools: !app.isPackaged,
     },
   });
   mainWindow = window;
@@ -73,6 +74,17 @@ function createWindow() {
     if (mainWindow === window) mainWindow = undefined;
   });
   window.setMenuBarVisibility(false);
+  if (app.isPackaged) {
+    window.webContents.on('before-input-event', (event, input) => {
+      const key = String(input.key || '').toLowerCase();
+      if (
+        key === 'f12' ||
+        ((input.control || input.meta) && input.shift && key === 'i')
+      ) {
+        event.preventDefault();
+      }
+    });
+  }
   process.env.VITE_DEV_SERVER_URL
     ? window.loadURL(process.env.VITE_DEV_SERVER_URL)
     : window.loadFile(path.join(__dirname, 'renderer-dist', 'index.html'));

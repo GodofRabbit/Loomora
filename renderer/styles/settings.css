@@ -161,13 +161,20 @@
   gap: 16px;
 }
 
-.gallery-organize-body label > span {
+.gallery-organize-field {
+  display: grid;
+  gap: 8px;
+}
+
+.gallery-organize-body label > span,
+.gallery-organize-field > span {
   display: inline-flex;
   align-items: center;
   gap: 7px;
 }
 
-.gallery-organize-body label > span svg {
+.gallery-organize-body label > span svg,
+.gallery-organize-field > span svg {
   width: 15px;
   height: 15px;
   color: #b68cf4;

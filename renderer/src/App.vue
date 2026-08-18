@@ -1041,19 +1041,69 @@ function openGalleryOrganizeModal() {
   };
 }
 
+async function organizeContextImage() {
+  const contextItem = contextMenu.value;
+  if (!contextItem?.filePath) return;
+  contextMenu.value = null;
+
+  const galleryItem =
+    gallery.value.find((item) => item.path === contextItem.filePath) || {};
+  let metadata = galleryItem;
+  if (window.forge?.getGalleryImageMetadata) {
+    try {
+      metadata = {
+        ...galleryItem,
+        ...(await window.forge.getGalleryImageMetadata(contextItem.filePath)),
+      };
+    } catch {
+      // Gallery list metadata is a sufficient fallback for quick organization.
+    }
+  }
+  galleryOrganizeModal.value = {
+    mode: 'single',
+    count: 1,
+    filePath: contextItem.filePath,
+    albums: galleryMetadataFacets.value.albums || [],
+    tags: galleryMetadataFacets.value.tags || [],
+    initialAlbum: metadata.album || '',
+    initialTags: Array.isArray(metadata.tags) ? metadata.tags : [],
+    initialColor: metadata.colorLabel || '',
+  };
+}
+
 async function organizeSelectedGallery(payload = {}) {
-  if (galleryOrganizing.value || !selectedGalleryItems.value.length) return;
+  const request = galleryOrganizeModal.value;
+  const singleMode = request?.mode === 'single';
+  const targetItems = singleMode
+    ? [
+        gallery.value.find((item) => item.path === request.filePath) || {
+          path: request.filePath,
+          tags: request.initialTags || [],
+        },
+      ]
+    : selectedGalleryItems.value;
+  if (galleryOrganizing.value || !targetItems.length || !targetItems[0]?.path) {
+    return;
+  }
   galleryOrganizing.value = true;
   try {
     const addedTags = Array.isArray(payload.tags) ? payload.tags : [];
     const results = [];
-    for (const item of selectedGalleryItems.value) {
-      const metadata = {
-        tags: Array.from(new Set([...(item.tags || []), ...addedTags])),
-      };
-      if (payload.album) metadata.album = payload.album;
-      if (payload.colorLabel !== 'keep') {
-        metadata.colorLabel = payload.colorLabel || '';
+    for (const item of targetItems) {
+      const metadata = singleMode
+        ? {
+            album: payload.album || '',
+            tags: addedTags,
+            colorLabel: payload.colorLabel || '',
+          }
+        : {
+            tags: Array.from(new Set([...(item.tags || []), ...addedTags])),
+          };
+      if (!singleMode) {
+        if (payload.album) metadata.album = payload.album;
+        if (payload.colorLabel !== 'keep') {
+          metadata.colorLabel = payload.colorLabel || '';
+        }
       }
       results.push(
         await window.forge.updateGalleryImageMetadata(item.path, metadata),
@@ -1064,9 +1114,12 @@ async function organizeSelectedGallery(payload = {}) {
       updates.has(item.path) ? { ...item, ...updates.get(item.path) } : item,
     );
     galleryOrganizeModal.value = null;
-    clearGallerySelection();
+    if (!singleMode) clearGallerySelection();
     await refreshGalleryMetadataFacets();
-    showGalleryToast(`已整理 ${results.length} 张作品`, 'success');
+    showGalleryToast(
+      singleMode ? '作品整理信息已更新' : `已整理 ${results.length} 张作品`,
+      'success',
+    );
   } catch (error) {
     showGalleryToast(
       formatUserMessage(error, '批量整理失败，请稍后重试'),
@@ -1437,7 +1490,7 @@ async function regenerateConversationTurn(turn) {
   creationHistoryVisible.value = true;
   await regenerateFromConversation(turn, {
     onStart: showRegenerationWait,
-    reuseTurn: turn.status === 'error',
+    reuseTurn: true,
   });
 }
 
@@ -2018,7 +2071,15 @@ async function saveSettings(
     settingsProviderId.value = profile.providerId || settingsProviderId.value;
     settingsModel.value = profile.model || settingsModel.value;
     await form.saveSettings();
-    shortcutBindings.value = await window.forge.setShortcuts(shortcuts);
+    const serializableShortcuts = Object.fromEntries(
+      Object.entries(shortcuts || {}).map(([key, binding]) => [
+        key,
+        binding && typeof binding === 'object' ? { ...binding } : binding,
+      ]),
+    );
+    shortcutBindings.value = await window.forge.setShortcuts(
+      serializableShortcuts,
+    );
     settingsOpen.value = false;
 
     if (galleryDirectory.value !== previousDirectory) {
@@ -2733,6 +2794,7 @@ onBeforeUnmount(() => {
       @show-folder="showContextImageInFolder"
       @favorite="toggleContextFavorite"
       @prompt="viewContextPrompt"
+      @organize="organizeContextImage"
       @delete="deleteContextImage"
     />
     <ConfirmModal
@@ -2782,6 +2844,10 @@ onBeforeUnmount(() => {
       :count="galleryOrganizeModal?.count || 0"
       :albums="galleryOrganizeModal?.albums || []"
       :tags="galleryOrganizeModal?.tags || []"
+      :mode="galleryOrganizeModal?.mode || 'batch'"
+      :initial-album="galleryOrganizeModal?.initialAlbum || ''"
+      :initial-tags="galleryOrganizeModal?.initialTags || []"
+      :initial-color="galleryOrganizeModal?.initialColor || ''"
       :busy="galleryOrganizing"
       @close="galleryOrganizeModal = null"
       @save="organizeSelectedGallery"

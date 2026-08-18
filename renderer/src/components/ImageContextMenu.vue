@@ -2,6 +2,7 @@
 import {
   Copy,
   Download,
+  FolderHeart,
   FolderOpen,
   Heart,
   ImagePlus,
@@ -26,6 +27,7 @@ defineEmits([
   'delete',
   'favorite',
   'prompt',
+  'organize',
 ]);
 </script>
 
@@ -42,6 +44,9 @@ defineEmits([
     </button>
     <button v-if="menu.filePath" @click="$emit('prompt')">
       <MessageSquareText aria-hidden="true" />查看提示词
+    </button>
+    <button v-if="menu.filePath" @click="$emit('organize')">
+      <FolderHeart aria-hidden="true" />整理作品
     </button>
     <button @click="$emit('reference')">
       <ImagePlus aria-hidden="true" />作为参考图创作

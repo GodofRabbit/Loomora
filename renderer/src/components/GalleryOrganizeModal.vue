@@ -1,12 +1,17 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { FolderHeart, Save, Tags, X } from 'lucide-vue-next';
+import DropdownSelect from './DropdownSelect.vue';
 
 const props = defineProps({
   open: Boolean,
   count: { type: Number, default: 0 },
   albums: { type: Array, default: () => [] },
   tags: { type: Array, default: () => [] },
+  mode: { type: String, default: 'batch' },
+  initialAlbum: { type: String, default: '' },
+  initialTags: { type: Array, default: () => [] },
+  initialColor: { type: String, default: '' },
   busy: Boolean,
 });
 
@@ -24,15 +29,24 @@ const colorOptions = [
   { value: 'blue', label: '蓝色' },
   { value: 'purple', label: '紫色' },
 ];
+const singleMode = computed(() => props.mode === 'single');
+const visibleColorOptions = computed(() =>
+  singleMode.value
+    ? colorOptions.filter((option) => option.value !== 'keep')
+    : colorOptions,
+);
+const availableTags = computed(() =>
+  Array.from(new Set([...props.tags, ...selectedTags.value])),
+);
 
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
-    albumDraft.value = '';
+    albumDraft.value = singleMode.value ? props.initialAlbum : '';
     tagsDraft.value = '';
-    selectedTags.value = [];
-    colorDraft.value = 'keep';
+    selectedTags.value = singleMode.value ? [...props.initialTags] : [];
+    colorDraft.value = singleMode.value ? props.initialColor : 'keep';
   },
 );
 
@@ -62,17 +76,20 @@ function save() {
         class="settings-modal gallery-organize-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="批量整理作品"
+        :aria-label="singleMode ? '整理作品' : '批量整理作品'"
         @click.stop
       >
         <header>
           <div>
-            <b>批量整理</b><span>已选择 {{ count }} 张作品</span>
+            <b>{{ singleMode ? '整理作品' : '批量整理' }}</b
+            ><span>{{
+              singleMode ? '快速修改分类信息' : `已选择 ${count} 张作品`
+            }}</span>
           </div>
           <button
             type="button"
-            title="关闭批量整理"
-            aria-label="关闭批量整理"
+            :title="singleMode ? '关闭整理' : '关闭批量整理'"
+            :aria-label="singleMode ? '关闭整理' : '关闭批量整理'"
             :disabled="busy"
             @click="$emit('close')"
           >
@@ -80,29 +97,33 @@ function save() {
           </button>
         </header>
         <div class="settings-modal-body gallery-organize-body">
-          <label>
+          <div class="gallery-organize-field">
             <span><FolderHeart aria-hidden="true" />加入专辑</span>
-            <input
-              v-model="albumDraft"
-              list="gallery-album-options"
-              maxlength="80"
+            <DropdownSelect
+              :model-value="albumDraft"
+              :options="albums"
+              editable
+              :max-length="80"
               placeholder="输入新专辑或选择已有专辑"
+              aria-label="选择或输入专辑"
+              @update:model-value="albumDraft = $event"
             />
-            <datalist id="gallery-album-options">
-              <option v-for="album in albums" :key="album" :value="album" />
-            </datalist>
-          </label>
+          </div>
           <label>
-            <span><Tags aria-hidden="true" />追加标签</span>
+            <span
+              ><Tags aria-hidden="true" />{{
+                singleMode ? '标签' : '追加标签'
+              }}</span
+            >
             <input
               v-model="tagsDraft"
               maxlength="400"
               placeholder="多个标签使用逗号分隔"
             />
           </label>
-          <div v-if="tags.length" class="gallery-organize-tags">
+          <div v-if="availableTags.length" class="gallery-organize-tags">
             <button
-              v-for="tag in tags"
+              v-for="tag in availableTags"
               :key="tag"
               type="button"
               :class="{ active: selectedTags.includes(tag) }"
@@ -115,7 +136,7 @@ function save() {
           <fieldset class="gallery-organize-colors">
             <legend>颜色标记</legend>
             <button
-              v-for="option in colorOptions"
+              v-for="option in visibleColorOptions"
               :key="option.value || 'none'"
               type="button"
               :class="[

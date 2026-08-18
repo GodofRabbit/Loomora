@@ -14,15 +14,89 @@
 !define MUI_FINISHPAGE_TEXT "现在可以开始创作了。首次启动时，Loomora 会提供一次简短的使用引导。"
 !define MUI_FINISHPAGE_RUN_TEXT "启动 Loomora"
 
-LangString deleteUserDataQuestion 2052 "是否同时删除 Loomora 保存的本地作品、历史记录和设置？$\r$\n选择“否”将保留这些数据，之后重新安装仍可使用。"
+!ifdef BUILD_UNINSTALLER
+  Var loomoraDeleteUserData
+  Var loomoraDeleteUserDataCheckbox
+!endif
 
-; Keep user data by default, but make the choice explicit during an assisted
-; uninstall. This runs after the install scope is selected, so the same
-; per-user/per-machine context is used as the normal electron-builder cleanup.
-!macro customUnInit
-  ${IfNot} ${Silent}
-    MessageBox MB_YESNO|MB_ICONQUESTION "$(deleteUserDataQuestion)" IDNO loomora_keep_user_data
-    Call un.checkAppRunning
+!macro customWelcomePage
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW loomoraWelcomeShow
+  !insertmacro MUI_PAGE_WELCOME
+
+  Function loomoraWelcomeShow
+    ; Only the welcome page is branded dark; all other pages retain the native
+    ; light body and footer supplied by Modern UI.
+    SetCtlColors $mui.WelcomePage "" "0B0818"
+    SetCtlColors $mui.WelcomePage.Title "EEE8FA" "0B0818"
+    SetCtlColors $mui.WelcomePage.Text "EEE8FA" "0B0818"
+  FunctionEnd
+!macroend
+
+!macro customUnWelcomePage
+  ; Modern UI reuses the generic welcome variables for uninstall pages.
+  !undef MUI_WELCOMEPAGE_TITLE
+  !undef MUI_WELCOMEPAGE_TEXT
+  !define MUI_WELCOMEPAGE_TITLE "欢迎使用 Loomora 卸载向导"
+  !define MUI_WELCOMEPAGE_TEXT "本向导将帮助您从电脑中卸载 Loomora。$\r$\n$\r$\n卸载前请先关闭正在运行的 Loomora。"
+  !insertmacro MUI_UNPAGE_WELCOME
+  UninstPage custom un.loomoraDataPageCreate un.loomoraDataPageLeave
+
+  Function un.loomoraDataPageCreate
+    !insertmacro MUI_HEADER_TEXT "本地数据" "选择卸载后要保留的内容"
+    nsDialogs::Create 1018
+    Pop $0
+    ${If} $0 == error
+      Abort
+    ${EndIf}
+
+    ${NSD_CreateLabel} 0u 4u 300u 32u "默认会保留您的本地数据，重新安装 Loomora 后仍可继续使用。"
+    Pop $1
+
+    ${NSD_CreateCheckbox} 0u 48u 300u 18u "同时删除本地作品、历史记录和设置"
+    Pop $loomoraDeleteUserDataCheckbox
+    ${If} $loomoraDeleteUserData == ${BST_CHECKED}
+      ${NSD_Check} $loomoraDeleteUserDataCheckbox
+    ${Else}
+      ${NSD_Uncheck} $loomoraDeleteUserDataCheckbox
+    ${EndIf}
+
+    ${NSD_CreateLabel} 16u 72u 284u 38u "勾选后将永久删除默认作品库及应用数据，此操作无法撤销。自定义到其他位置的作品文件不会被删除。"
+    Pop $1
+
+    nsDialogs::Show
+  FunctionEnd
+
+  Function un.loomoraDataPageLeave
+    ${NSD_GetState} $loomoraDeleteUserDataCheckbox $loomoraDeleteUserData
+    ${If} $loomoraDeleteUserData == ${BST_CHECKED}
+      Return
+    ${EndIf}
+
+    ; Older Windows builds stored Gallery beside the executable. Preserve it
+    ; in Electron's user-data directory before NSIS removes $INSTDIR.
+    IfFileExists "$INSTDIR\Gallery\*.*" 0 loomora_preserve_done
+    CreateDirectory "$APPDATA\${APP_FILENAME}\Gallery"
+    nsExec::ExecToStack '"$SYSDIR\robocopy.exe" "$INSTDIR\Gallery" "$APPDATA\${APP_FILENAME}\Gallery" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP'
+    Pop $0
+    Pop $1
+    ${If} $0 == "error"
+      Goto loomora_preserve_failed
+    ${EndIf}
+    IntCmp $0 8 loomora_preserve_failed loomora_preserve_done loomora_preserve_failed
+
+    loomora_preserve_failed:
+      MessageBox MB_OK|MB_ICONSTOP "无法安全保留安装目录中的作品库。请确认磁盘空间和文件权限后重试卸载。"
+      Abort
+
+    loomora_preserve_done:
+  FunctionEnd
+!macroend
+
+; electron-builder runs this after its own optional --delete-app-data cleanup.
+; The assisted uninstaller uses the checkbox above, while silent upgrades keep
+; the variable empty and therefore always preserve user data.
+!macro customUnInstall
+  ${If} $loomoraDeleteUserData == ${BST_CHECKED}
     ${if} $installMode == "all"
       SetShellVarContext current
     ${endif}
@@ -36,21 +110,16 @@ LangString deleteUserDataQuestion 2052 "是否同时删除 Loomora 保存的本�
     ${if} $installMode == "all"
       SetShellVarContext all
     ${endif}
-    loomora_keep_user_data:
-  ${endif}
+  ${EndIf}
 !macroend
 
-!macro customWelcomePage
-  !define MUI_PAGE_CUSTOMFUNCTION_SHOW loomoraWelcomeShow
-  !insertmacro MUI_PAGE_WELCOME
-
-  Function loomoraWelcomeShow
-    ; Only the welcome page is branded dark; all other pages retain the native
-    ; light body and footer supplied by Modern UI.
-    SetCtlColors $mui.WelcomePage "" "0B0818"
-    SetCtlColors $mui.WelcomePage.Title "EEE8FA" "0B0818"
-    SetCtlColors $mui.WelcomePage.Text "EEE8FA" "0B0818"
-  FunctionEnd
+; electron-builder inserts this hook immediately before the uninstall finish
+; page, which lets that page receive uninstall-specific copy as well.
+!macro customUninstallPage
+  !undef MUI_FINISHPAGE_TITLE
+  !undef MUI_FINISHPAGE_TEXT
+  !define MUI_FINISHPAGE_TITLE "Loomora 已成功卸载"
+  !define MUI_FINISHPAGE_TEXT "Loomora 已从您的电脑中移除。"
 !macroend
 
 !macro customHeader

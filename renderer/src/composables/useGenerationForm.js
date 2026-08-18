@@ -315,6 +315,8 @@ export function useGenerationForm({
     Object.assign(target, {
       prompt: request.prompt.trim(),
       model: request.model,
+      providerId: request.providerId || 'openai-compatible',
+      profileId: request.profileId || activeProfileId.value,
       ratio: request.aspect,
       resolution: request.size,
       quality: request.quality,
@@ -382,6 +384,8 @@ export function useGenerationForm({
       createdAt: Number(turn.createdAt) || Date.now(),
       prompt: String(turn.prompt || ''),
       model: String(turn.model || normalizedModel.value),
+      providerId: String(turn.providerId || 'openai-compatible'),
+      profileId: String(turn.profileId || 'openai-main'),
       ratio: String(turn.ratio || '1:1'),
       resolution: String(turn.resolution || '1024x1024'),
       quality: String(turn.quality || 'auto'),
@@ -456,6 +460,8 @@ export function useGenerationForm({
       completedAt: Number(turn.completedAt) || null,
       prompt: String(turn.prompt || ''),
       model: String(turn.model || ''),
+      providerId: String(turn.providerId || 'openai-compatible'),
+      profileId: String(turn.profileId || 'openai-main'),
       ratio: String(turn.ratio || ''),
       resolution: String(turn.resolution || ''),
       quality: String(turn.quality || ''),
@@ -1119,7 +1125,13 @@ export function useGenerationForm({
     busy.value = true;
     resetGenerationState();
     const total = request.count;
-    createConversationTurn(total, request);
+    const reusableTurn = request.conversationId
+      ? conversationHistory.value.find(
+          (turn) => turn.id === request.conversationId,
+        )
+      : null;
+    if (reusableTurn) reuseConversationTurn(reusableTurn, total, request);
+    else createConversationTurn(total, request);
     generationMode.value = total > 1 ? 'batch' : 'stream';
     generationProgress.value.total = total;
     status.value =
@@ -1131,7 +1143,8 @@ export function useGenerationForm({
     });
     await persistConversationTurn();
     try {
-      const result = await window.forge.generate(request);
+      const { conversationId: _conversationId, ...generationRequest } = request;
+      const result = await window.forge.generate(generationRequest);
       if (typeof result?.images?.length === 'number' && result.images.length) {
         images.value = result.images;
       }
@@ -1144,7 +1157,9 @@ export function useGenerationForm({
       updateActiveConversation((turn) => {
         turn.images = [...images.value];
         turn.imagePaths = [...imagePaths.value];
-        turn.folder = result.folder || '';
+        // A retried turn stays in its original history file even when the new
+        // images are generated on another date.
+        turn.folder = turn.folder || result.folder || '';
         turn.error = result.error || '';
         turn.liveImage = '';
         turn.progress = {
@@ -1283,8 +1298,13 @@ export function useGenerationForm({
     }
   }
 
-  async function generate({ onStart, request: requestOverrides = {} } = {}) {
+  async function generate({
+    onStart,
+    reuseTurn = null,
+    request: requestOverrides = {},
+  } = {}) {
     const request = getGenerationPayload(requestOverrides);
+    if (reuseTurn?.id) request.conversationId = String(reuseTurn.id);
     if (!request.prompt.trim()) {
       status.value = '请输入提示词';
       return;

@@ -6,6 +6,9 @@ const props = defineProps({
   modelValue: { type: String, required: true },
   options: { type: Array, required: true },
   ariaLabel: { type: String, default: '选择选项' },
+  editable: Boolean,
+  placeholder: { type: String, default: '请选择' },
+  maxLength: { type: Number, default: undefined },
 });
 const emit = defineEmits(['update:modelValue']);
 const root = ref(null);
@@ -13,6 +16,8 @@ const optionElements = ref([]);
 const open = ref(false);
 const activeIndex = ref(0);
 const placement = ref('down');
+const searchQuery = ref('');
+const suppressNextEditableFocus = ref(false);
 const listboxId = `dropdown-${Math.random().toString(36).slice(2, 9)}`;
 const normalizedOptions = computed(() =>
   (Array.isArray(props.options) ? props.options : []).map((option) =>
@@ -22,8 +27,17 @@ const normalizedOptions = computed(() =>
 const selectedLabel = computed(
   () =>
     normalizedOptions.value.find((option) => option.value === props.modelValue)
-      ?.label || props.modelValue,
+      ?.label || props.modelValue || props.placeholder,
 );
+const menuOptions = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+  if (!props.editable || !query) return normalizedOptions.value;
+  return normalizedOptions.value.filter((option) =>
+    String(option.label || option.value)
+      .toLocaleLowerCase()
+      .includes(query),
+  );
+});
 
 function focusActiveOption() {
   nextTick(() => optionElements.value[activeIndex.value]?.focus());
@@ -34,23 +48,32 @@ function updatePanelPlacement() {
   const panel = root.value.querySelector('.dropdown-select-panel');
   const panelHeight = panel
     ? Math.min(panel.scrollHeight, 252)
-    : Math.min(normalizedOptions.value.length * 40 + 10, 252);
+    : Math.min(menuOptions.value.length * 40 + 10, 252);
   const spaceBelow = window.innerHeight - rect.bottom;
   const spaceAbove = rect.top;
   placement.value =
     spaceBelow < panelHeight + 12 && spaceAbove > spaceBelow ? 'up' : 'down';
 }
-function openMenu() {
+function focusTrigger({ suppressEditableOpen = false } = {}) {
+  if (props.editable) {
+    suppressNextEditableFocus.value = suppressEditableOpen;
+    root.value?.querySelector('input')?.focus();
+    return;
+  }
+  root.value?.querySelector('.dropdown-select-trigger')?.focus();
+}
+function openMenu({ resetFilter = true, focusOption = true } = {}) {
+  if (resetFilter) searchQuery.value = '';
   activeIndex.value = Math.max(
     0,
-    normalizedOptions.value.findIndex(
+    menuOptions.value.findIndex(
       (option) => option.value === props.modelValue,
     ),
   );
   open.value = true;
   nextTick(() => {
     updatePanelPlacement();
-    focusActiveOption();
+    if (focusOption) focusActiveOption();
   });
 }
 function toggleMenu() {
@@ -63,13 +86,28 @@ function toggleMenu() {
 function selectOption(option) {
   emit('update:modelValue', option.value);
   open.value = false;
-  root.value?.querySelector('.dropdown-select-trigger')?.focus();
+  focusTrigger({ suppressEditableOpen: true });
 }
 function moveActive(step) {
-  const total = normalizedOptions.value.length;
+  const total = menuOptions.value.length;
   if (!total) return;
   activeIndex.value = (activeIndex.value + step + total) % total;
   focusActiveOption();
+}
+function onEditableInput(event) {
+  const value = event.target.value;
+  searchQuery.value = value;
+  activeIndex.value = 0;
+  emit('update:modelValue', value);
+  if (!open.value) openMenu({ resetFilter: false, focusOption: false });
+  else nextTick(updatePanelPlacement);
+}
+function onEditableFocus() {
+  if (suppressNextEditableFocus.value) {
+    suppressNextEditableFocus.value = false;
+    return;
+  }
+  if (!open.value) openMenu({ focusOption: false });
 }
 function onTriggerKeydown(event) {
   if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
@@ -91,7 +129,7 @@ function onOptionKeydown(event, option) {
   } else if (event.key === 'Escape') {
     event.preventDefault();
     open.value = false;
-    root.value?.querySelector('.dropdown-select-trigger')?.focus();
+    focusTrigger({ suppressEditableOpen: true });
   }
 }
 function closeFromOutside(event) {
@@ -125,7 +163,36 @@ onBeforeUnmount(() => {
     class="dropdown-select"
     :class="{ open, 'drop-up': placement === 'up' }"
   >
+    <div
+      v-if="editable"
+      class="dropdown-select-trigger dropdown-select-input-trigger"
+    >
+      <input
+        :value="modelValue"
+        type="text"
+        role="combobox"
+        :maxlength="maxLength"
+        :placeholder="placeholder"
+        :aria-label="ariaLabel"
+        :aria-controls="listboxId"
+        :aria-expanded="open"
+        aria-autocomplete="list"
+        aria-haspopup="listbox"
+        @input="onEditableInput"
+        @focus="onEditableFocus"
+        @keydown="onTriggerKeydown"
+      />
+      <button
+        type="button"
+        tabindex="-1"
+        :aria-label="`${open ? '收起' : '展开'}${ariaLabel}`"
+        @click="toggleMenu"
+      >
+        <ChevronDown aria-hidden="true" />
+      </button>
+    </div>
     <button
+      v-else
       class="dropdown-select-trigger"
       type="button"
       role="combobox"
@@ -148,7 +215,7 @@ onBeforeUnmount(() => {
         :aria-label="ariaLabel"
       >
         <button
-          v-for="(option, index) in normalizedOptions"
+          v-for="(option, index) in menuOptions"
           :key="option.value"
           :ref="(element) => (optionElements[index] = element)"
           type="button"
@@ -162,6 +229,9 @@ onBeforeUnmount(() => {
           <span>{{ option.label }}</span>
           <Check v-if="option.value === modelValue" aria-hidden="true" />
         </button>
+        <div v-if="!menuOptions.length" class="dropdown-select-empty">
+          没有匹配的已有选项
+        </div>
       </div>
     </Transition>
   </div>

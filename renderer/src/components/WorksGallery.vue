@@ -31,6 +31,7 @@ import {
 } from 'lucide-vue-next';
 import aiAvatar from '../../assets/avatars/ai-avatar.svg';
 import userAvatar from '../../assets/avatars/user-avatar.png';
+import DropdownSelect from './DropdownSelect.vue';
 
 const props = defineProps({
   view: { type: String, required: true },
@@ -110,6 +111,22 @@ const emit = defineEmits([
   'conversation-scroll',
   'conversation-scroll-state',
 ]);
+const galleryAlbumOptions = computed(() => [
+  { value: 'all', label: '全部专辑' },
+  ...props.galleryAlbums.map((album) => ({ value: album, label: album })),
+]);
+const galleryTagOptions = computed(() => [
+  { value: 'all', label: '全部标签' },
+  ...props.galleryTags.map((tag) => ({ value: tag, label: tag })),
+]);
+const galleryColorOptions = [
+  { value: 'all', label: '全部颜色' },
+  { value: 'red', label: '红色' },
+  { value: 'gold', label: '金色' },
+  { value: 'green', label: '绿色' },
+  { value: 'blue', label: '蓝色' },
+  { value: 'purple', label: '紫色' },
+];
 const dragActive = ref(false);
 const generationChat = ref(null);
 const gallerySticky = ref(null);
@@ -1049,11 +1066,15 @@ onBeforeUnmount(() => {
                 galleryDeleting ||
                 !gallery.length
               "
-              :title="gallerySelectionMode ? '退出多选' : '选择多张作品'"
+              :title="
+                gallerySelectionMode
+                  ? '退出批量整理'
+                  : '选择作品后设置专辑、标签和颜色'
+              "
               @click="emit('toggle-selection-mode')"
             >
               <ListChecks aria-hidden="true" />
-              <span>{{ gallerySelectionMode ? '退出多选' : '多选' }}</span>
+              <span>{{ gallerySelectionMode ? '退出整理' : '批量整理' }}</span>
             </button>
             <button
               type="button"
@@ -1116,29 +1137,21 @@ onBeforeUnmount(() => {
       >
         <label>
           <FolderHeart aria-hidden="true" />
-          <select
-            :value="galleryAlbum"
+          <DropdownSelect
+            :model-value="galleryAlbum"
+            :options="galleryAlbumOptions"
             aria-label="按专辑筛选"
-            @change="emit('update-gallery-album', $event.target.value)"
-          >
-            <option value="all">全部专辑</option>
-            <option v-for="album in galleryAlbums" :key="album" :value="album">
-              {{ album }}
-            </option>
-          </select>
+            @update:model-value="emit('update-gallery-album', $event)"
+          />
         </label>
         <label>
           <Tags aria-hidden="true" />
-          <select
-            :value="galleryTag"
+          <DropdownSelect
+            :model-value="galleryTag"
+            :options="galleryTagOptions"
             aria-label="按标签筛选"
-            @change="emit('update-gallery-tag', $event.target.value)"
-          >
-            <option value="all">全部标签</option>
-            <option v-for="tag in galleryTags" :key="tag" :value="tag">
-              {{ tag }}
-            </option>
-          </select>
+            @update:model-value="emit('update-gallery-tag', $event)"
+          />
         </label>
         <label>
           <span
@@ -1146,18 +1159,12 @@ onBeforeUnmount(() => {
             :class="`color-${galleryColor}`"
             aria-hidden="true"
           ></span>
-          <select
-            :value="galleryColor"
+          <DropdownSelect
+            :model-value="galleryColor"
+            :options="galleryColorOptions"
             aria-label="按颜色筛选"
-            @change="emit('update-gallery-color', $event.target.value)"
-          >
-            <option value="all">全部颜色</option>
-            <option value="red">红色</option>
-            <option value="gold">金色</option>
-            <option value="green">绿色</option>
-            <option value="blue">蓝色</option>
-            <option value="purple">紫色</option>
-          </select>
+            @update:model-value="emit('update-gallery-color', $event)"
+          />
         </label>
       </div>
     </div>

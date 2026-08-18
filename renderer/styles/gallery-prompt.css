@@ -2,6 +2,7 @@
   position: fixed;
   z-index: 270;
   inset: 0;
+  top: var(--window-titlebar-height);
   background: rgba(8, 5, 17, 0.56);
   backdrop-filter: blur(5px);
 }
@@ -317,6 +318,100 @@
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
+}
+
+.prompt-details-organization {
+  margin-top: 16px;
+  padding: 12px 0;
+  border-top: 1px solid rgba(158, 112, 224, 0.2);
+  border-bottom: 1px solid rgba(158, 112, 224, 0.16);
+}
+
+.prompt-details-organization dl {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.prompt-details-organization dl > div {
+  display: grid;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.prompt-details-organization dl > div:first-child {
+  padding-left: 0;
+}
+
+.prompt-details-organization dl > div:last-child {
+  padding-right: 0;
+}
+
+.prompt-details-organization dl > div + div {
+  border-left: 1px solid rgba(158, 112, 224, 0.14);
+}
+
+.prompt-details-organization dt,
+.prompt-details-organization dd {
+  margin: 0;
+  font-size: 11px;
+}
+
+.prompt-details-organization dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8d8298;
+}
+
+.prompt-details-organization dt svg {
+  width: 13px;
+  height: 13px;
+  color: #a57adf;
+}
+
+.prompt-details-organization dd {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  align-items: center;
+  gap: 5px;
+  color: #cec3d7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-details-organization dd.empty {
+  color: #746b7d;
+}
+
+.prompt-details-organization-color {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: #51495a;
+}
+
+.prompt-details-organization-color.color-red {
+  background: #c46073;
+}
+.prompt-details-organization-color.color-gold {
+  background: #c69b52;
+}
+.prompt-details-organization-color.color-green {
+  background: #5d9a77;
+}
+.prompt-details-organization-color.color-blue {
+  background: #6289bc;
+}
+.prompt-details-organization-color.color-purple {
+  background: #8d63c5;
 }
 
 .prompt-details-metadata {

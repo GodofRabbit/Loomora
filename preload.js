@@ -4,9 +4,12 @@ contextBridge.exposeInMainWorld('forge', {
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   getOnboardingComplete: () => ipcRenderer.invoke('get-onboarding-complete'),
   setOnboardingComplete: () => ipcRenderer.invoke('set-onboarding-complete'),
-  getSecureApiKey: () => ipcRenderer.invoke('get-secure-api-key'),
-  setSecureApiKey: (value) => ipcRenderer.invoke('set-secure-api-key', value),
-  clearSecureApiKey: () => ipcRenderer.invoke('clear-secure-api-key'),
+  getSecureApiKey: (profileId) =>
+    ipcRenderer.invoke('get-secure-api-key', profileId),
+  setSecureApiKey: (profileId, value) =>
+    ipcRenderer.invoke('set-secure-api-key', profileId, value),
+  clearSecureApiKey: (profileId) =>
+    ipcRenderer.invoke('clear-secure-api-key', profileId),
   listGenerationProviders: () =>
     ipcRenderer.invoke('list-generation-providers'),
   testGenerationProvider: (payload) =>

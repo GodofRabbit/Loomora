@@ -1,14 +1,18 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import {
+  ArrowLeft,
   CircleAlert,
   Copy,
   FileText,
+  FolderHeart,
   GitCompare,
   LoaderCircle,
+  Palette,
   Pencil,
   Save,
   Sparkles,
+  Tags,
   X,
 } from 'lucide-vue-next';
 
@@ -57,6 +61,14 @@ function cancelEditing() {
   resetDrafts();
 }
 
+function handleHeaderClose() {
+  if (editing.value) {
+    cancelEditing();
+    return;
+  }
+  emit('close');
+}
+
 function saveDrafts() {
   emit('save', {
     title: titleDraft.value,
@@ -86,6 +98,12 @@ const sourceLabel = computed(() => {
   };
   return labels[props.details?.source] || '本地作品';
 });
+
+const colorLabel = computed(
+  () =>
+    colorOptions.find((option) => option.value === props.details?.colorLabel)
+      ?.label || '未设置',
+);
 
 const metadataRows = computed(() => {
   const details = props.details || {};
@@ -124,7 +142,11 @@ const metadataRows = computed(() => {
 
 <template>
   <Transition name="prompt-drawer">
-    <div v-if="open" class="prompt-drawer-layer" @click.self="$emit('close')">
+    <div
+      v-if="open"
+      class="prompt-drawer-layer"
+      @click.self="handleHeaderClose"
+    >
       <aside
         class="prompt-details-panel"
         role="dialog"
@@ -152,11 +174,12 @@ const metadataRows = computed(() => {
             </button>
             <button
               type="button"
-              title="关闭提示词"
-              aria-label="关闭提示词"
-              @click="$emit('close')"
+              :title="editing ? '返回图片信息' : '关闭提示词'"
+              :aria-label="editing ? '返回图片信息' : '关闭提示词'"
+              @click="handleHeaderClose"
             >
-              <X aria-hidden="true" />
+              <ArrowLeft v-if="editing" aria-hidden="true" />
+              <X v-else aria-hidden="true" />
             </button>
           </div>
         </header>
@@ -224,6 +247,45 @@ const metadataRows = computed(() => {
               <img :src="details.image" :alt="details.name || '作品预览'" />
               <span>{{ sourceLabel }}</span>
             </div>
+
+            <section
+              v-if="details?.filePath"
+              class="prompt-details-organization"
+              aria-label="作品整理信息"
+            >
+              <dl>
+                <div>
+                  <dt><FolderHeart aria-hidden="true" />专辑</dt>
+                  <dd
+                    :class="{ empty: !details.album }"
+                    :title="details.album || '未设置'"
+                  >
+                    {{ details.album || '未设置' }}
+                  </dd>
+                </div>
+                <div>
+                  <dt><Tags aria-hidden="true" />标签</dt>
+                  <dd
+                    class="prompt-details-organization-tags"
+                    :class="{ empty: !details.tags?.length }"
+                    :title="details.tags?.join('、') || '未设置'"
+                  >
+                    {{ details.tags?.join('、') || '未设置' }}
+                  </dd>
+                </div>
+                <div>
+                  <dt><Palette aria-hidden="true" />颜色</dt>
+                  <dd :class="{ empty: !details.colorLabel }">
+                    <i
+                      class="prompt-details-organization-color"
+                      :class="`color-${details.colorLabel || 'none'}`"
+                      aria-hidden="true"
+                    ></i>
+                    {{ colorLabel }}
+                  </dd>
+                </div>
+              </dl>
+            </section>
 
             <div v-if="details?.prompt" class="prompt-details-content">
               <div class="prompt-details-label">
