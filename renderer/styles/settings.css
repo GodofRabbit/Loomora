@@ -330,6 +330,22 @@
   background: #28243b;
   color: #ddd8e8;
 }
+.settings-test {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(181, 142, 255, 0.34);
+  background: rgba(106, 72, 153, 0.24);
+  color: #e6d8f6;
+}
+.settings-test svg {
+  width: 15px;
+  height: 15px;
+}
+.settings-test:hover:not(:disabled) {
+  border-color: rgba(205, 171, 255, 0.7);
+  background: rgba(127, 85, 183, 0.38);
+}
 .settings-save {
   display: inline-flex;
   align-items: center;

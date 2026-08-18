@@ -95,18 +95,40 @@ const openAiCompatibleProvider = {
     streaming: true,
     batch: true,
     partialPreview: true,
+    polling: false,
+    cancel: true,
   },
   async generate({ payload, references, signal, count = 1, stream = false }) {
     const useEdit = references.length > 0;
     const base = endpointBase(payload.endpoint);
-    return fetch(`${base}/images/${useEdit ? 'edits' : 'generations'}`, {
-      method: 'POST',
-      headers: requestHeaders(payload.apiKey, !useEdit),
-      body: useEdit
-        ? editBody(payload, references, { count, stream })
-        : JSON.stringify(generationBody(payload, { count, stream })),
-      signal,
+    const response = await fetch(
+      `${base}/images/${useEdit ? 'edits' : 'generations'}`,
+      {
+        method: 'POST',
+        headers: requestHeaders(payload.apiKey, !useEdit),
+        body: useEdit
+          ? editBody(payload, references, { count, stream })
+          : JSON.stringify(generationBody(payload, { count, stream })),
+        signal,
+      },
+    );
+    return { kind: 'response', response };
+  },
+  async testConnection({ endpoint, apiKey }) {
+    const base = endpointBase(endpoint);
+    const response = await fetch(`${base}/models`, {
+      headers: requestHeaders(apiKey),
     });
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`接口连接失败 (${response.status})`);
+    }
+    return {
+      ok: true,
+      message:
+        response.status === 404
+          ? '接口地址可访问，但未提供模型列表'
+          : '接口连接成功',
+    };
   },
 };
 

@@ -32,7 +32,8 @@ const USER_ERROR_RULES = [
 
 let activeGeneration = null;
 
-const normalizeModel = (model) => MODEL_ALIASES[model] || OPENAI_IMAGE_MODEL;
+const normalizeModel = (model) =>
+  MODEL_ALIASES[model] || String(model || '').trim() || OPENAI_IMAGE_MODEL;
 function formatUserError(value, fallback = '操作失败，请稍后重试') {
   const raw =
     typeof value === 'string'
@@ -249,8 +250,11 @@ async function sendOpenAiRequest(
     count: Math.max(1, Number(options.count) || 1),
     stream: Boolean(options.stream),
   });
-  if (!response.ok) throw new Error(await responseText(response));
-  return response;
+  if (response?.kind === 'result') return response;
+  const httpResponse =
+    response?.kind === 'response' ? response.response : response;
+  if (!httpResponse?.ok) throw new Error(await responseText(httpResponse));
+  return { kind: 'response', response: httpResponse };
 }
 
 async function generateSingle(payload, event, signal) {
@@ -279,19 +283,23 @@ async function generateSingle(payload, event, signal) {
       message: '正在生成 1 张图片...',
     });
 
-    const response = await sendOpenAiRequest(
+    const providerResult = await sendOpenAiRequest(
       payload,
       model,
       references,
       signal,
       { count: 1, stream: true },
     );
-    const finalItem = await consumeImageStream(response, {
-      event,
-      batchIndex: 0,
-      total: 1,
-      outputFormat: requestedOutputFormat(payload),
-    });
+    const finalItem =
+      providerResult.kind === 'result'
+        ? providerResult.items?.[0]
+        : await consumeImageStream(providerResult.response, {
+            event,
+            batchIndex: 0,
+            total: 1,
+            outputFormat: requestedOutputFormat(payload),
+          });
+    if (!finalItem) throw new Error('provider returned no image');
     const saved = await saveGeneratedImages([finalItem], {
       key: payload.apiKey,
       outputFormat: requestedOutputFormat(payload),
@@ -349,23 +357,20 @@ async function generateBatch(payload, total, event, signal) {
       message: `正在抽卡队列中，等待 ${total} 张作品...`,
     });
 
-    const response = await sendOpenAiRequest(
+    const providerResult = await sendOpenAiRequest(
       payload,
       model,
       references,
       signal,
       { count: total, stream: false },
     );
-    const json = await responseJson(response, '图片接口');
-    if (!response.ok) {
-      throw new Error(
-        json?.error?.message ||
-          json?.message ||
-          `提交失败 (${response.status})`,
-      );
+    let items;
+    if (providerResult.kind === 'result') {
+      items = providerResult.items || [];
+    } else {
+      const json = await responseJson(providerResult.response, 'image api');
+      items = imagesOf(json);
     }
-
-    const items = imagesOf(json);
     if (!items.length) throw new Error('接口未返回图片数据');
     const saved = await saveGeneratedImages(items, {
       key: payload.apiKey,
@@ -424,10 +429,12 @@ function registerGenerationHandler() {
 
     const controller = new AbortController();
     activeGeneration = { controller };
-    const total = Math.min(
+    const provider = getProvider(payload?.providerId);
+    const requestedTotal = Math.min(
       MAX_GENERATION_COUNT,
       Math.max(1, Number(payload?.count) || 1),
     );
+    const total = provider?.capabilities?.batch === false ? 1 : requestedTotal;
 
     try {
       const result =

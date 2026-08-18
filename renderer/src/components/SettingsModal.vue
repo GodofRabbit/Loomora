@@ -7,6 +7,7 @@ import {
   HardDriveDownload,
   HardDriveUpload,
   Keyboard,
+  PlugZap,
   RotateCcw,
   Save,
   ServerCog,
@@ -41,6 +42,7 @@ const emit = defineEmits([
   'profile-change',
   'profile-create',
   'profile-delete',
+  'test-connection',
 ]);
 const profileDraftId = ref(props.activeProfileId);
 const endpointDraft = ref(props.endpoint);
@@ -436,6 +438,21 @@ async function resetShortcutDraft() {
           </section>
         </div>
         <footer>
+          <button
+            type="button"
+            class="settings-test"
+            :disabled="saving || clearing || backupBusy"
+            @click="
+              emit('test-connection', {
+                providerId: providerDraft,
+                endpoint: endpointDraft,
+                apiKey: apiKeyDraft,
+                model: modelDraft,
+              })
+            "
+          >
+            <PlugZap aria-hidden="true" />测试连接
+          </button>
           <button
             type="button"
             class="settings-cancel"

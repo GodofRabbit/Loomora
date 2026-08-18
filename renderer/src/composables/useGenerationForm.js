@@ -173,6 +173,13 @@ export function useGenerationForm({
   const settingsApiKey = ref(apiKey.value);
   const activeConversationId = ref('');
 
+  const activeProvider = computed(
+    () =>
+      providerOptions.value.find(
+        (item) => item.id === activeProfile.value?.providerId,
+      ) || {},
+  );
+
   const normalizedModel = computed(() => {
     const value = model.value.trim();
     return modelAliases[value] || value;
@@ -192,11 +199,20 @@ export function useGenerationForm({
   );
   const counter = computed(() => `${prompt.value.length}/${promptLimit.value}`);
   const maxReferences = computed(() => 16);
-  const maxCount = computed(
-    () =>
-      modelOptions.find((option) => option.value === normalizedModel.value)
-        ?.maxCount || 1,
-  );
+  const currentModelOptions = computed(() => {
+    const current = normalizedModel.value;
+    return current && !modelOptions.some((item) => item.value === current)
+      ? [{ value: current, label: current, maxCount: 1 }, ...modelOptions]
+      : modelOptions;
+  });
+  const maxCount = computed(() => {
+    if (activeProvider.value.capabilities?.batch === false) return 1;
+    return (
+      currentModelOptions.value.find(
+        (option) => option.value === normalizedModel.value,
+      )?.maxCount || 1
+    );
+  });
   const conversationHasOlder = computed(
     () =>
       conversationOffset.value + conversationHistory.value.length <
@@ -980,6 +996,29 @@ export function useGenerationForm({
     processGenerationQueue();
   }
 
+  async function testProviderConnection({
+    providerId,
+    endpoint: testEndpoint,
+    apiKey: testApiKey,
+    model: testModel,
+  } = {}) {
+    try {
+      const result = await window.forge.testGenerationProvider({
+        providerId,
+        endpoint: testEndpoint,
+        apiKey: testApiKey,
+        model: testModel,
+      });
+      status.value = result?.message || result?.error || '连接测试失败';
+      showToast(status.value, result?.ok ? 'success' : 'error');
+      return result;
+    } catch (error) {
+      status.value = formatUserMessage(error, '连接测试失败，请稍后重试');
+      showToast(status.value, 'error');
+      return { ok: false, error: status.value };
+    }
+  }
+
   function clearLocalSettings() {
     localStorage.removeItem(ENDPOINT_STORAGE);
     localStorage.removeItem(API_KEY_STORAGE);
@@ -1329,7 +1368,7 @@ export function useGenerationForm({
     maxCount,
     promptLimit,
     counter,
-    modelOptions,
+    modelOptions: currentModelOptions,
     resetGenerationState,
     applyGenerationUpdate,
     loadConversationHistory,
@@ -1355,6 +1394,7 @@ export function useGenerationForm({
     removeGenerationTask,
     clearFinishedGenerationTasks,
     saveSettings,
+    testProviderConnection,
     clearLocalSettings,
     handlePaste,
     generate,

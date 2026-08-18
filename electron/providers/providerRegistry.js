@@ -14,7 +14,7 @@ function getProvider(id) {
 
 function listProviders() {
   return Array.from(providers.values()).map(
-    ({ generate, ...metadata }) => metadata,
+    ({ generate, testConnection, cancel, ...metadata }) => metadata,
   );
 }
 

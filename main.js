@@ -10,7 +10,7 @@ const {
   saveConversationTurn,
 } = require('./electron/gallery');
 const { registerGenerationHandler } = require('./electron/generation');
-const { listProviders } = require('./electron/providers');
+const { getProvider, listProviders } = require('./electron/providers');
 const {
   registerGenerationQueueHandlers,
 } = require('./electron/generationQueue');
@@ -89,6 +89,34 @@ registerBackupHandlers({
 });
 registerGenerationHandler();
 ipcMain.handle('list-generation-providers', () => listProviders());
+ipcMain.handle('test-generation-provider', async (_event, payload) => {
+  const provider = getProvider(payload?.providerId);
+  if (!provider?.testConnection) {
+    return { ok: false, error: '当前服务暂不支持连接测试' };
+  }
+  const endpoint = String(payload?.endpoint || '').trim();
+  const apiKey = String(payload?.apiKey || '').trim();
+  if (!endpoint || !apiKey) {
+    return {
+      ok: false,
+      error:
+        !endpoint && !apiKey
+          ? '请先填写接口地址和 API Key'
+          : !endpoint
+            ? '请先填写接口地址'
+            : '请先填写 API Key',
+    };
+  }
+  try {
+    return await provider.testConnection({
+      endpoint,
+      apiKey,
+      model: String(payload?.model || ''),
+    });
+  } catch (error) {
+    return { ok: false, error: String(error?.message || '连接测试失败') };
+  }
+});
 registerGenerationQueueHandlers();
 registerOcrHandlers();
 registerPreferenceHandlers();

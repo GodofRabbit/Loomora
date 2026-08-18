@@ -199,6 +199,7 @@ const {
   selectProviderProfile,
   createProviderProfile,
   deleteProviderProfile,
+  testProviderConnection,
 } = form;
 
 const ocr = useOcr(showToast);
@@ -1959,6 +1960,10 @@ async function handleProviderProfileDelete(profileId) {
   await deleteProviderProfile(profileId);
 }
 
+async function handleProviderConnectionTest(payload) {
+  return testProviderConnection(payload);
+}
+
 async function saveSettings(
   endpoint,
   apiKey,
@@ -2807,6 +2812,7 @@ onBeforeUnmount(() => {
       @profile-change="handleProviderProfileChange"
       @profile-create="handleProviderProfileCreate"
       @profile-delete="handleProviderProfileDelete"
+      @test-connection="handleProviderConnectionTest"
     />
     <AboutModal
       :open="aboutOpen"
