@@ -254,7 +254,7 @@
   height: 17px;
   flex: 0 0 auto;
 }
-.cancel {
+.generation-actions .cancel {
   display: grid;
   width: 44px;
   min-width: 44px;
@@ -268,12 +268,12 @@
   font-size: 24px;
   white-space: nowrap;
 }
-.cancel:hover:not(:disabled) {
+.generation-actions .cancel:hover:not(:disabled) {
   border-color: rgba(177, 128, 255, 0.74);
   background: rgba(56, 39, 87, 0.94);
   color: #fff;
 }
-.cancel svg {
+.generation-actions .cancel svg {
   width: 18px;
   height: 18px;
 }

@@ -51,7 +51,7 @@ Loomora 将 AI 生图、聊天式创作历史、本地作品库、灵感复用�
 
 ## 本地作品库
 
-![Loomora 本地作品库](docs/screenshots/works-gallery-female.jpg)
+![Loomora 本地作品库](docs/screenshots/works-gallery-female.png)
 
 - 图片默认按 `Gallery/YYYY-MM-DD/` 归档，并按日期和修改时间由新到旧展示。
 - 瀑布流保持原图比例，并根据窗口宽度自动调整列数。
@@ -78,7 +78,7 @@ Loomora 将 AI 生图、聊天式创作历史、本地作品库、灵感复用�
 
 ## 图片编辑与 OCR
 
-![Loomora 图片编辑器](docs/screenshots/image-editor.jpg)
+![Loomora 图片编辑器](docs/screenshots/image-editor.png)
 
 - 编辑器基于 TOAST UI Image Editor，工具名称、按钮和提示已中文化。
 - 支持裁剪、翻转、旋转、涂鸦、形状、图标、文字、滤镜、颜色、透明度和画布缩放。

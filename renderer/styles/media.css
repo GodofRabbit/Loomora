@@ -381,6 +381,81 @@
   justify-content: center;
   vertical-align: middle;
 }
+.image-editor-host .tui-image-editor-container .tui-image-editor-submenu
+  .tui-image-editor-submenu-item .tui-image-editor-button.apply,
+.image-editor-host .tui-image-editor-container .tui-image-editor-submenu
+  .tui-image-editor-submenu-item .tui-image-editor-button.cancel {
+  display: inline-flex;
+  width: 68px;
+  min-width: 68px;
+  height: 36px;
+  margin: 0 5px;
+  padding: 0 10px;
+  border: 1px solid rgba(167, 127, 228, 0.28);
+  border-radius: 6px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(45, 35, 63, 0.72);
+  color: #c6bdcf;
+  font-size: 11px;
+  line-height: 1;
+  vertical-align: middle;
+}
+.image-editor-host .tui-image-editor-submenu-item > li.tie-crop-button.action,
+.image-editor-host .tui-image-editor-submenu-item > li.tie-resize-button.action {
+  display: inline-flex;
+  width: auto;
+  height: 52px;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.image-editor-host .tui-image-editor-button.apply > svg,
+.image-editor-host .tui-image-editor-button.cancel > svg {
+  display: block;
+  align-self: center;
+}
+.image-editor-host .tui-image-editor-container .tui-image-editor-submenu
+  .tui-image-editor-submenu-item .tui-image-editor-button.apply {
+  border-color: rgba(166, 119, 239, 0.44);
+  background: rgba(83, 57, 121, 0.54);
+  color: #e0d1f2;
+}
+.image-editor-host .tui-image-editor-container .tui-image-editor-submenu
+  .tui-image-editor-submenu-item .tui-image-editor-button.apply:hover,
+.image-editor-host .tui-image-editor-container .tui-image-editor-submenu
+  .tui-image-editor-submenu-item .tui-image-editor-button.cancel:hover {
+  border-color: rgba(205, 170, 255, 0.7);
+  background: rgba(104, 73, 147, 0.76);
+  color: #fff;
+  transform: none;
+}
+.image-editor-host .tui-image-editor-container .tui-image-editor-submenu
+  .tui-image-editor-button.apply label,
+.image-editor-host .tui-image-editor-container .tui-image-editor-submenu
+  .tui-image-editor-button.cancel label {
+  display: inline-flex;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  align-items: center;
+  vertical-align: middle;
+}
+.image-editor-host .tui-image-editor-button.apply svg,
+.image-editor-host .tui-image-editor-button.cancel svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.image-editor-host .tie-crop-button .tui-image-editor-button.apply,
+.image-editor-host .tie-crop-preset-button .tui-image-editor-button.apply,
+.image-editor-host .tie-resize-button .tui-image-editor-button.apply,
+.image-editor-host .tie-resize-preset-button .tui-image-editor-button.apply {
+  margin-right: 5px;
+}
 .image-editor-host .tui-image-editor-submenu {
   background-color: #1b1828;
 }

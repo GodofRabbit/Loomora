@@ -184,7 +184,7 @@
     bottom: 18px;
   }
   .generation-actions .generate,
-  .cancel {
+  .generation-actions .cancel {
     min-width: 0;
   }
   .image-editor-toolbar {
