@@ -32,6 +32,7 @@ const props = defineProps({
   count: { type: Number, required: true },
   modelIsGpt: Boolean,
   modelIsGemini: Boolean,
+  providerCapabilities: { type: Object, default: () => ({}) },
   busy: Boolean,
   startMode: Boolean,
   collapseSignal: { type: Number, default: 0 },
@@ -161,6 +162,7 @@ watch(
       ></textarea>
       <div class="prompt-tools">
         <button
+          v-if="providerCapabilities.references !== false"
           type="button"
           :disabled="maxReferences === 0"
           @mousedown.prevent
@@ -214,7 +216,9 @@ watch(
           aria-label="选择画面比例"
           @update:model-value="emit('update:ratio', $event)"
       /></label>
-      <label class="resolution-control"
+      <label
+        v-if="providerCapabilities.size !== false"
+        class="resolution-control"
         ><span>分辨率</span
         ><DropdownSelect
           :model-value="resolution"
@@ -222,7 +226,12 @@ watch(
           aria-label="选择分辨率"
           @update:model-value="emit('update:resolution', $event)"
       /></label>
-      <label v-if="modelIsGpt || modelIsGemini" class="quality-control"
+      <label
+        v-if="
+          providerCapabilities.quality !== false &&
+          (modelIsGpt || modelIsGemini)
+        "
+        class="quality-control"
         ><span>质量</span
         ><DropdownSelect
           :model-value="quality"
@@ -260,7 +269,15 @@ watch(
       <div class="generation-actions action-control">
         <button type="button" class="generate" @click="emit('generate')">
           <WandSparkles aria-hidden="true" />
-          {{ busy ? '加入队列' : count > 1 ? '批量生成' : '流式生成' }}
+          {{
+            busy
+              ? '加入队列'
+              : count > 1
+                ? '批量生成'
+                : providerCapabilities.streaming === false
+                  ? '开始生成'
+                  : '流式生成'
+          }}
         </button>
         <button
           v-if="busy"

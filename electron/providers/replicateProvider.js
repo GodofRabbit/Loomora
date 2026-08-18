@@ -41,6 +41,15 @@ function outputItems(output) {
     .map((url) => ({ url }));
 }
 
+async function cancelPrediction(base, apiKey, requestId) {
+  if (!requestId) return false;
+  const response = await fetch(`${base}/v1/predictions/${requestId}/cancel`, {
+    method: 'POST',
+    headers: headers(apiKey),
+  });
+  return response.ok;
+}
+
 async function responseJson(response) {
   const text = await response.text();
   try {
@@ -87,6 +96,10 @@ const replicateProvider = {
   capabilities: {
     textToImage: true,
     imageToImage: true,
+    references: true,
+    size: false,
+    quality: false,
+    outputFormat: true,
     streaming: false,
     batch: false,
     partialPreview: false,
@@ -116,12 +129,21 @@ const replicateProvider = {
       );
     }
     if (!prediction.id) throw new Error('Replicate 未返回任务编号');
-    const result = await waitForPrediction(
-      base,
-      payload.apiKey,
-      prediction,
-      signal,
-    );
+    const cancelOnAbort = () => {
+      cancelPrediction(base, payload.apiKey, prediction.id).catch(() => {});
+    };
+    signal.addEventListener('abort', cancelOnAbort, { once: true });
+    let result;
+    try {
+      result = await waitForPrediction(
+        base,
+        payload.apiKey,
+        prediction,
+        signal,
+      );
+    } finally {
+      signal.removeEventListener('abort', cancelOnAbort);
+    }
     if (result.status !== 'succeeded') {
       throw new Error(
         result.error || `Replicate 任务${result.status || '失败'}`,
@@ -132,13 +154,8 @@ const replicateProvider = {
     return { kind: 'result', items, providerRequestId: result.id };
   },
   async cancel({ payload, requestId }) {
-    if (!requestId) return { ok: false };
     const base = endpointBase(payload.endpoint);
-    const response = await fetch(`${base}/v1/predictions/${requestId}/cancel`, {
-      method: 'POST',
-      headers: headers(payload.apiKey),
-    });
-    return { ok: response.ok };
+    return { ok: await cancelPrediction(base, payload.apiKey, requestId) };
   },
   async testConnection({ endpoint, apiKey }) {
     const base = endpointBase(endpoint);
@@ -148,6 +165,29 @@ const replicateProvider = {
     if (!response.ok)
       throw new Error(`Replicate 连接失败 (${response.status})`);
     return { ok: true, message: 'Replicate 连接成功' };
+  },
+  async listModels({ endpoint, apiKey }) {
+    const base = endpointBase(endpoint);
+    const response = await fetch(`${base}/v1/models?limit=100`, {
+      headers: headers(apiKey),
+    });
+    const payload = await responseJson(response);
+    if (!response.ok) {
+      throw new Error(
+        payload.detail || `Replicate 模型列表获取失败 (${response.status})`,
+      );
+    }
+    const models = Array.isArray(payload.results)
+      ? payload.results
+          .map((item) =>
+            String(
+              item?.id ||
+                (item?.owner && item?.name ? `${item.owner}/${item.name}` : ''),
+            ).trim(),
+          )
+          .filter(Boolean)
+      : [];
+    return { ok: true, models };
   },
 };
 

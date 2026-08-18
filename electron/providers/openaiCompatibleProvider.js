@@ -92,6 +92,10 @@ const openAiCompatibleProvider = {
   capabilities: {
     textToImage: true,
     imageToImage: true,
+    references: true,
+    size: true,
+    quality: true,
+    outputFormat: true,
     streaming: true,
     batch: true,
     partialPreview: true,
@@ -129,6 +133,26 @@ const openAiCompatibleProvider = {
           ? '接口地址可访问，但未提供模型列表'
           : '接口连接成功',
     };
+  },
+  async listModels({ endpoint, apiKey }) {
+    const base = endpointBase(endpoint);
+    const response = await fetch(`${base}/models`, {
+      headers: requestHeaders(apiKey),
+    });
+    const text = await response.text();
+    let json = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      json = {};
+    }
+    if (!response.ok) {
+      throw new Error(`模型列表获取失败 (${response.status})`);
+    }
+    const models = Array.isArray(json.data)
+      ? json.data.map((item) => String(item?.id || '').trim()).filter(Boolean)
+      : [];
+    return { ok: true, models };
   },
 };
 

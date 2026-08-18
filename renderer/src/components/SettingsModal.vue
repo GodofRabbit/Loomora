@@ -24,6 +24,8 @@ const props = defineProps({
   profileName: { type: String, default: '' },
   providerId: { type: String, default: 'openai-compatible' },
   providerOptions: { type: Array, default: () => [] },
+  providerModels: { type: Array, default: () => [] },
+  providerModelsLoading: Boolean,
   model: { type: String, default: 'gpt-image-2' },
   storagePath: { type: String, default: '' },
   defaultStoragePath: { type: String, default: '' },
@@ -43,6 +45,7 @@ const emit = defineEmits([
   'profile-create',
   'profile-delete',
   'test-connection',
+  'list-models',
 ]);
 const profileDraftId = ref(props.activeProfileId);
 const endpointDraft = ref(props.endpoint);
@@ -320,7 +323,35 @@ async function resetShortcutDraft() {
             </label>
             <label>
               <span>默认模型</span>
-              <input v-model="modelDraft" placeholder="gpt-image-2" />
+              <div class="provider-model-row">
+                <input
+                  v-model="modelDraft"
+                  list="provider-model-options"
+                  placeholder="gpt-image-2"
+                />
+                <button
+                  type="button"
+                  :disabled="
+                    saving || clearing || backupBusy || providerModelsLoading
+                  "
+                  @click="
+                    emit('list-models', {
+                      providerId: providerDraft,
+                      endpoint: endpointDraft,
+                      apiKey: apiKeyDraft,
+                    })
+                  "
+                >
+                  {{ providerModelsLoading ? '读取中...' : '读取模型' }}
+                </button>
+              </div>
+              <datalist id="provider-model-options">
+                <option
+                  v-for="item in providerModels"
+                  :key="item"
+                  :value="item"
+                />
+              </datalist>
             </label>
           </section>
           <section class="settings-group">

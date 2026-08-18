@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('forge', {
     ipcRenderer.invoke('list-generation-providers'),
   testGenerationProvider: (payload) =>
     ipcRenderer.invoke('test-generation-provider', payload),
+  listGenerationProviderModels: (payload) =>
+    ipcRenderer.invoke('list-generation-provider-models', payload),
   getShortcuts: () => ipcRenderer.invoke('get-shortcuts'),
   setShortcuts: (value) => ipcRenderer.invoke('set-shortcuts', value),
   resetShortcuts: () => ipcRenderer.invoke('reset-shortcuts'),

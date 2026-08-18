@@ -179,6 +179,9 @@ export function useGenerationForm({
         (item) => item.id === activeProfile.value?.providerId,
       ) || {},
   );
+  const providerCapabilities = computed(
+    () => activeProvider.value.capabilities || {},
+  );
 
   const normalizedModel = computed(() => {
     const value = model.value.trim();
@@ -198,7 +201,9 @@ export function useGenerationForm({
     () => promptLimits[normalizedModel.value] || DEFAULT_PROMPT_LIMIT,
   );
   const counter = computed(() => `${prompt.value.length}/${promptLimit.value}`);
-  const maxReferences = computed(() => 16);
+  const maxReferences = computed(() =>
+    providerCapabilities.value.references === false ? 0 : 16,
+  );
   const currentModelOptions = computed(() => {
     const current = normalizedModel.value;
     return current && !modelOptions.some((item) => item.value === current)
@@ -1019,6 +1024,34 @@ export function useGenerationForm({
     }
   }
 
+  async function listProviderModels({
+    providerId,
+    endpoint: modelEndpoint,
+    apiKey: modelApiKey,
+  } = {}) {
+    try {
+      const result = await window.forge.listGenerationProviderModels({
+        providerId,
+        endpoint: modelEndpoint,
+        apiKey: modelApiKey,
+      });
+      if (result?.ok) {
+        const count = Array.isArray(result.models) ? result.models.length : 0;
+        showToast(
+          count ? `已读取 ${count} 个模型` : '服务未返回可用模型',
+          count ? 'success' : 'error',
+        );
+      } else {
+        showToast(result?.error || '模型列表获取失败', 'error');
+      }
+      return result;
+    } catch (error) {
+      const message = formatUserMessage(error, '模型列表获取失败，请稍后重试');
+      showToast(message, 'error');
+      return { ok: false, error: message };
+    }
+  }
+
   function clearLocalSettings() {
     localStorage.removeItem(ENDPOINT_STORAGE);
     localStorage.removeItem(API_KEY_STORAGE);
@@ -1358,6 +1391,7 @@ export function useGenerationForm({
     settingsProviderId,
     settingsModel,
     providerOptions,
+    providerCapabilities,
     modelIsGpt,
     modelIsGemini,
     ratioOptions,
@@ -1395,6 +1429,7 @@ export function useGenerationForm({
     clearFinishedGenerationTasks,
     saveSettings,
     testProviderConnection,
+    listProviderModels,
     clearLocalSettings,
     handlePaste,
     generate,

@@ -346,6 +346,25 @@
   border-color: rgba(205, 171, 255, 0.7);
   background: rgba(127, 85, 183, 0.38);
 }
+.provider-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.provider-model-row button {
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 7px;
+  min-width: 76px;
+  border: 1px solid rgba(181, 142, 255, 0.34);
+  background: rgba(106, 72, 153, 0.24);
+  color: #e6d8f6;
+  font-size: 11px;
+}
+.provider-model-row button:hover:not(:disabled) {
+  border-color: rgba(205, 171, 255, 0.7);
+  background: rgba(127, 85, 183, 0.38);
+}
 .settings-save {
   display: inline-flex;
   align-items: center;

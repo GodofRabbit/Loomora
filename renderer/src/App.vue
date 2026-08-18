@@ -44,6 +44,8 @@ const settingsOpen = ref(false);
 const settingsSaving = ref(false);
 const localDataClearing = ref(false);
 const backupBusy = ref(false);
+const providerModels = ref([]);
+const providerModelsLoading = ref(false);
 const shortcutBindings = ref({});
 const aboutOpen = ref(false);
 const onboardingOpen = ref(false);
@@ -174,6 +176,7 @@ const {
   settingsProviderId,
   settingsModel,
   providerOptions,
+  providerCapabilities,
   modelIsGpt,
   modelIsGemini,
   ratioOptions,
@@ -200,6 +203,7 @@ const {
   createProviderProfile,
   deleteProviderProfile,
   testProviderConnection,
+  listProviderModels,
 } = form;
 
 const ocr = useOcr(showToast);
@@ -1949,19 +1953,34 @@ async function clearLocalData() {
 }
 
 async function handleProviderProfileChange(profileId) {
+  providerModels.value = [];
   await selectProviderProfile(profileId);
 }
 
 async function handleProviderProfileCreate() {
+  providerModels.value = [];
   await createProviderProfile();
 }
 
 async function handleProviderProfileDelete(profileId) {
+  providerModels.value = [];
   await deleteProviderProfile(profileId);
 }
 
 async function handleProviderConnectionTest(payload) {
   return testProviderConnection(payload);
+}
+
+async function handleProviderModelsList(payload) {
+  if (providerModelsLoading.value) return;
+  providerModelsLoading.value = true;
+  try {
+    const result = await listProviderModels(payload);
+    providerModels.value = Array.isArray(result?.models) ? result.models : [];
+    return result;
+  } finally {
+    providerModelsLoading.value = false;
+  }
 }
 
 async function saveSettings(
@@ -2465,6 +2484,7 @@ onBeforeUnmount(() => {
             :max-count="maxCount"
             :model-is-gpt="modelIsGpt"
             :model-is-gemini="modelIsGemini"
+            :provider-capabilities="providerCapabilities"
             :busy="busy"
             :start-mode="createStartMode"
             :show-bottom-button="
@@ -2796,6 +2816,8 @@ onBeforeUnmount(() => {
       :profile-name="settingsProfileName"
       :provider-id="settingsProviderId"
       :provider-options="providerOptions"
+      :provider-models="providerModels"
+      :provider-models-loading="providerModelsLoading"
       :model="settingsModel"
       :storage-path="galleryDirectory"
       :default-storage-path="defaultGalleryDirectory"
@@ -2813,6 +2835,7 @@ onBeforeUnmount(() => {
       @profile-create="handleProviderProfileCreate"
       @profile-delete="handleProviderProfileDelete"
       @test-connection="handleProviderConnectionTest"
+      @list-models="handleProviderModelsList"
     />
     <AboutModal
       :open="aboutOpen"

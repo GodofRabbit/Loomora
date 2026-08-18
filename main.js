@@ -117,6 +117,22 @@ ipcMain.handle('test-generation-provider', async (_event, payload) => {
     return { ok: false, error: String(error?.message || '连接测试失败') };
   }
 });
+ipcMain.handle('list-generation-provider-models', async (_event, payload) => {
+  const provider = getProvider(payload?.providerId);
+  if (!provider?.listModels) {
+    return { ok: false, error: '当前服务暂不支持读取模型' };
+  }
+  const endpoint = String(payload?.endpoint || '').trim();
+  const apiKey = String(payload?.apiKey || '').trim();
+  if (!endpoint || !apiKey) {
+    return { ok: false, error: '请先填写接口地址和 API Key' };
+  }
+  try {
+    return await provider.listModels({ endpoint, apiKey });
+  } catch (error) {
+    return { ok: false, error: String(error?.message || '模型列表获取失败') };
+  }
+});
 registerGenerationQueueHandlers();
 registerOcrHandlers();
 registerPreferenceHandlers();
