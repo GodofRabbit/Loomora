@@ -3,7 +3,9 @@ import {
   Copy,
   Download,
   FolderOpen,
+  Heart,
   ImagePlus,
+  MessageSquareText,
   Pencil,
   RefreshCw,
   ScanText,
@@ -22,6 +24,8 @@ defineEmits([
   'rename',
   'show-folder',
   'delete',
+  'favorite',
+  'prompt',
 ]);
 </script>
 
@@ -32,6 +36,13 @@ defineEmits([
     @click.stop
   >
     <button @click="$emit('copy')"><Copy aria-hidden="true" />复制</button>
+    <button v-if="menu.filePath" @click="$emit('favorite')">
+      <Heart :class="{ active: menu.favorite }" aria-hidden="true" />
+      {{ menu.favorite ? '取消收藏' : '收藏图片' }}
+    </button>
+    <button v-if="menu.filePath" @click="$emit('prompt')">
+      <MessageSquareText aria-hidden="true" />查看提示词
+    </button>
     <button @click="$emit('reference')">
       <ImagePlus aria-hidden="true" />作为参考图创作
     </button>

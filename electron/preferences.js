@@ -40,6 +40,10 @@ function writeOnboardingComplete() {
   fs.renameSync(temporaryTarget, target);
 }
 
+function clearPreferenceData() {
+  fs.rmSync(onboardingStatePath(), { force: true });
+}
+
 function registerPreferenceHandlers() {
   ipcMain.handle('get-onboarding-complete', () => readOnboardingComplete());
   ipcMain.handle('set-onboarding-complete', () => {
@@ -48,4 +52,4 @@ function registerPreferenceHandlers() {
   });
 }
 
-module.exports = { registerPreferenceHandlers };
+module.exports = { clearPreferenceData, registerPreferenceHandlers };

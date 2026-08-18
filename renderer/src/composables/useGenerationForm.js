@@ -50,11 +50,11 @@ const legacyOpenAiEndpointPattern = /^https:\/\/api\.openai\.com\/v1\/?$/i;
 const CONVERSATION_PAGE_SIZE = 10;
 const CONVERSATION_WINDOW_SIZE = CONVERSATION_PAGE_SIZE * 3;
 
-function normalizeEndpoint(value) {
+function normalizeEndpoint(value, fallback = DEFAULT_ENDPOINT) {
   const endpoint = String(value || '').trim();
   return legacyOpenAiEndpointPattern.test(endpoint)
     ? OPENAI_API_BASE
-    : endpoint || DEFAULT_ENDPOINT;
+    : endpoint || fallback;
 }
 
 function readPastedImage(file) {
@@ -66,7 +66,11 @@ function readPastedImage(file) {
   });
 }
 
-export function useGenerationForm({ status, showToast }) {
+export function useGenerationForm({
+  status,
+  showToast,
+  onRequireConfiguration,
+}) {
   const prompt = ref('');
   const ratio = ref('1:1');
   const count = ref(1);
@@ -90,10 +94,16 @@ export function useGenerationForm({ status, showToast }) {
     partial: 0,
   });
   const busy = ref(false);
+  const generationQueue = ref([]);
+  const queuePaused = ref(
+    localStorage.getItem('loomora-generation-queue-paused') === 'true',
+  );
+  const activeQueueTaskId = ref('');
+  let queueProcessing = false;
   const endpoint = ref(
     normalizeEndpoint(localStorage.getItem(ENDPOINT_STORAGE)),
   );
-  const apiKey = ref(localStorage.getItem(API_KEY_STORAGE) || '');
+  const apiKey = ref('');
   const model = ref(OPENAI_IMAGE_MODEL);
   const resolution = ref('auto');
   const quality = ref('auto');
@@ -186,6 +196,7 @@ export function useGenerationForm({ status, showToast }) {
       liveImage: '',
       images: [],
       imagePaths: [],
+      imageFavorites: [],
       progress: {
         batchIndex: 0,
         total,
@@ -235,6 +246,7 @@ export function useGenerationForm({ status, showToast }) {
       liveImage: '',
       images: [],
       imagePaths: [],
+      imageFavorites: [],
       progress: {
         batchIndex: 0,
         total,
@@ -267,6 +279,9 @@ export function useGenerationForm({ status, showToast }) {
   function normalizeConversationTurn(turn = {}) {
     const imagePaths = Array.isArray(turn.imagePaths) ? turn.imagePaths : [];
     const imagesValue = Array.isArray(turn.images) ? turn.images : [];
+    const imageFavorites = Array.isArray(turn.imageFavorites)
+      ? turn.imageFavorites
+      : [];
     const referencePaths = Array.isArray(turn.referencePaths)
       ? turn.referencePaths.map((item) => String(item || '')).filter(Boolean)
       : [];
@@ -309,6 +324,10 @@ export function useGenerationForm({ status, showToast }) {
       liveImage: '',
       images: imagesValue,
       imagePaths,
+      imageFavorites: imagePaths.map((_, index) => ({
+        favorite: imageFavorites[index]?.favorite === true,
+        favoritedAt: imageFavorites[index]?.favoritedAt || null,
+      })),
       progress: {
         batchIndex: Math.max(0, Number(turn.progress?.batchIndex) || 0),
         total: Math.max(0, Number(turn.progress?.total) || total),
@@ -703,11 +722,6 @@ export function useGenerationForm({ status, showToast }) {
   }
 
   async function regenerateFromConversation(turn = {}, options = {}) {
-    if (busy.value) {
-      status.value = '已有图片正在生成，请稍候';
-      showToast(status.value, 'error');
-      return;
-    }
     if (!turn.prompt) {
       status.value = '未找到可重新生成的提示词';
       showToast(status.value, 'error');
@@ -783,13 +797,57 @@ export function useGenerationForm({ status, showToast }) {
     settingsApiKey.value = apiKey.value;
   }
 
-  function saveSettings() {
-    endpoint.value = normalizeEndpoint(settingsEndpoint.value);
+  async function hydrateSecureApiKey() {
+    const legacyApiKey = localStorage.getItem(API_KEY_STORAGE) || '';
+    try {
+      if (legacyApiKey && window.forge?.setSecureApiKey) {
+        await window.forge.setSecureApiKey(legacyApiKey);
+        localStorage.removeItem(API_KEY_STORAGE);
+      }
+      apiKey.value = window.forge?.getSecureApiKey
+        ? await window.forge.getSecureApiKey()
+        : '';
+      settingsApiKey.value = apiKey.value;
+      await loadGenerationQueue();
+      processGenerationQueue();
+    } catch (error) {
+      localStorage.removeItem(API_KEY_STORAGE);
+      status.value = formatUserMessage(error, 'API Key 读取失败，请重新填写');
+      showToast(status.value, 'error');
+    }
+  }
+
+  async function saveSettings() {
+    // 保存时保留空地址，生成入口才能及时识别“未配置”状态。
+    endpoint.value = normalizeEndpoint(settingsEndpoint.value, '');
     apiKey.value = settingsApiKey.value.trim();
-    localStorage.setItem(ENDPOINT_STORAGE, endpoint.value);
-    localStorage.setItem(API_KEY_STORAGE, apiKey.value);
+    if (endpoint.value) localStorage.setItem(ENDPOINT_STORAGE, endpoint.value);
+    else localStorage.removeItem(ENDPOINT_STORAGE);
+    localStorage.removeItem(API_KEY_STORAGE);
+    if (window.forge?.setSecureApiKey) {
+      await window.forge.setSecureApiKey(apiKey.value);
+    }
     status.value = '配置已保存';
     showToast('配置已保存');
+    processGenerationQueue();
+  }
+
+  function clearLocalSettings() {
+    localStorage.removeItem(ENDPOINT_STORAGE);
+    localStorage.removeItem(API_KEY_STORAGE);
+    endpoint.value = DEFAULT_ENDPOINT;
+    apiKey.value = '';
+    settingsEndpoint.value = DEFAULT_ENDPOINT;
+    settingsApiKey.value = '';
+    prompt.value = '';
+    reference.value = [];
+    conversationHistory.value = [];
+    conversationOffset.value = 0;
+    conversationTotal.value = 0;
+    activeConversationId.value = '';
+    generationQueue.value = [];
+    activeQueueTaskId.value = '';
+    resetGenerationState();
   }
 
   async function handlePaste(event, { view, editorOpen, settingsOpen }) {
@@ -828,35 +886,11 @@ export function useGenerationForm({ status, showToast }) {
     }
   }
 
-  async function generate({
-    onStart,
-    request: requestOverrides = {},
-    reuseTurn = null,
-  } = {}) {
-    const request = getGenerationPayload(requestOverrides);
-    if (!request.prompt.trim()) {
-      status.value = '请输入提示词';
-      return;
-    }
-    if (!request.apiKey.trim()) {
-      status.value = '请先填写 API Key';
-      return;
-    }
-    if (request.reference.length > maxReferences.value) {
-      status.value = `${normalizedModel.value} 最多支持 ${maxReferences.value} 张参考图`;
-      return;
-    }
-    if (!window.forge?.generate) {
-      status.value = '应用通信服务不可用，请重启 Loomora';
-      return;
-    }
-
+  async function executeQueuedGeneration(request) {
     busy.value = true;
     resetGenerationState();
     const total = request.count;
-    if (reuseTurn) reuseConversationTurn(reuseTurn, total, request);
-    else createConversationTurn(total, request);
-    onStart?.();
+    createConversationTurn(total, request);
     generationMode.value = total > 1 ? 'batch' : 'stream';
     generationProgress.value.total = total;
     status.value =
@@ -901,7 +935,7 @@ export function useGenerationForm({ status, showToast }) {
         });
         await persistConversationTurn();
         showToast(status.value, 'error');
-        return;
+        return false;
       }
       status.value = result.folder
         ? `生成完成，作品已保存到 ${result.folder}`
@@ -912,6 +946,7 @@ export function useGenerationForm({ status, showToast }) {
         turn.completedAt = Date.now();
       });
       await persistConversationTurn();
+      return true;
     } catch (error) {
       status.value = formatUserMessage(
         error,
@@ -925,9 +960,159 @@ export function useGenerationForm({ status, showToast }) {
       });
       await persistConversationTurn();
       showToast(status.value, 'error');
+      return false;
     } finally {
       busy.value = false;
     }
+  }
+
+  async function loadGenerationQueue() {
+    if (!window.forge?.listGenerationQueue) return;
+    try {
+      generationQueue.value = await window.forge.listGenerationQueue();
+    } catch (error) {
+      showToast(
+        formatUserMessage(error, '生成队列读取失败，请稍后重试'),
+        'error',
+      );
+    }
+  }
+
+  async function setQueueTaskStatus(id, statusValue, error = '') {
+    const updated = await window.forge.updateGenerationQueueTask({
+      id,
+      status: statusValue,
+      error,
+    });
+    const index = generationQueue.value.findIndex((item) => item.id === id);
+    if (index >= 0) generationQueue.value[index] = updated;
+    else generationQueue.value.push(updated);
+  }
+
+  async function processGenerationQueue() {
+    if (
+      queueProcessing ||
+      queuePaused.value ||
+      !apiKey.value.trim() ||
+      !window.forge?.getGenerationQueueTask
+    ) {
+      return;
+    }
+    queueProcessing = true;
+    try {
+      let nextTask = generationQueue.value.find(
+        (item) => item.status === 'pending',
+      );
+      while (nextTask && !queuePaused.value) {
+        activeQueueTaskId.value = nextTask.id;
+        await setQueueTaskStatus(nextTask.id, 'running');
+        let succeeded = false;
+        let taskError = '';
+        try {
+          const task = await window.forge.getGenerationQueueTask(nextTask.id);
+          if (!String(task.request?.endpoint || '').trim()) {
+            taskError = '请先填写接口地址';
+            await setQueueTaskStatus(nextTask.id, 'failed', taskError);
+            activeQueueTaskId.value = '';
+            nextTask = generationQueue.value.find(
+              (item) => item.status === 'pending',
+            );
+            continue;
+          }
+          succeeded = await executeQueuedGeneration({
+            ...task.request,
+            apiKey: apiKey.value,
+          });
+          if (!succeeded) taskError = status.value || '图片生成失败';
+        } catch (error) {
+          taskError = formatUserMessage(error, '图片生成请求发送失败');
+        }
+        await setQueueTaskStatus(
+          nextTask.id,
+          succeeded ? 'done' : 'failed',
+          taskError,
+        );
+        activeQueueTaskId.value = '';
+        nextTask = generationQueue.value.find(
+          (item) => item.status === 'pending',
+        );
+      }
+    } finally {
+      activeQueueTaskId.value = '';
+      queueProcessing = false;
+    }
+  }
+
+  async function generate({ onStart, request: requestOverrides = {} } = {}) {
+    const request = getGenerationPayload(requestOverrides);
+    if (!request.prompt.trim()) {
+      status.value = '请输入提示词';
+      return;
+    }
+    const missingConfiguration = [];
+    if (!request.endpoint.trim()) missingConfiguration.push('接口地址');
+    if (!request.apiKey.trim()) missingConfiguration.push('API Key');
+    if (missingConfiguration.length) {
+      status.value = `请先配置${missingConfiguration.join('和')}`;
+      showToast(status.value, 'error');
+      onRequireConfiguration?.();
+      return;
+    }
+    if (request.reference.length > maxReferences.value) {
+      status.value = `${normalizedModel.value} 最多支持 ${maxReferences.value} 张参考图`;
+      showToast(status.value, 'error');
+      return;
+    }
+    if (!window.forge?.enqueueGenerationTask) {
+      status.value = '生成队列服务不可用，请重启 Loomora';
+      showToast(status.value, 'error');
+      return;
+    }
+    try {
+      const { apiKey: _apiKey, ...persistedRequest } = request;
+      const task = await window.forge.enqueueGenerationTask(persistedRequest);
+      generationQueue.value.push(task);
+      onStart?.();
+      status.value = busy.value
+        ? `已加入生成队列，前方还有 ${generationQueue.value.filter((item) => item.status === 'pending').length - 1} 个任务`
+        : '已加入生成队列';
+      showToast(status.value);
+      processGenerationQueue();
+      return task;
+    } catch (error) {
+      status.value = formatUserMessage(error, '加入生成队列失败，请稍后重试');
+      showToast(status.value, 'error');
+    }
+  }
+
+  function toggleQueuePause() {
+    queuePaused.value = !queuePaused.value;
+    localStorage.setItem(
+      'loomora-generation-queue-paused',
+      String(queuePaused.value),
+    );
+    if (!queuePaused.value) processGenerationQueue();
+  }
+
+  async function retryGenerationTask(task) {
+    if (!task?.id || task.status !== 'failed') return;
+    await setQueueTaskStatus(task.id, 'pending');
+    processGenerationQueue();
+  }
+
+  async function removeGenerationTask(task) {
+    if (!task?.id || task.id === activeQueueTaskId.value) return;
+    await window.forge.removeGenerationQueueTask(task.id);
+    generationQueue.value = generationQueue.value.filter(
+      (item) => item.id !== task.id,
+    );
+  }
+
+  async function clearFinishedGenerationTasks() {
+    await window.forge.clearFinishedGenerationTasks();
+    generationQueue.value = generationQueue.value.filter(
+      (item) => !['done', 'failed'].includes(item.status),
+    );
   }
 
   return {
@@ -950,6 +1135,9 @@ export function useGenerationForm({ status, showToast }) {
     generationPhase,
     generationProgress,
     busy,
+    generationQueue,
+    queuePaused,
+    activeQueueTaskId,
     model,
     resolution,
     quality,
@@ -982,7 +1170,14 @@ export function useGenerationForm({ status, showToast }) {
     pickReference,
     removeReference,
     resetSettingsDraft,
+    hydrateSecureApiKey,
+    loadGenerationQueue,
+    toggleQueuePause,
+    retryGenerationTask,
+    removeGenerationTask,
+    clearFinishedGenerationTasks,
     saveSettings,
+    clearLocalSettings,
     handlePaste,
     generate,
     cancelGeneration,

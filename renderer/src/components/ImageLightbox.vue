@@ -2,7 +2,9 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Heart,
   LoaderCircle,
+  MessageSquareText,
   Pencil,
   ScanText,
   X,
@@ -12,13 +14,47 @@ defineProps({
   preview: { type: Object, required: true },
   currentItem: { type: Object, required: true },
   ocrBusy: Boolean,
+  favoriteUpdating: Boolean,
 });
-defineEmits(['close', 'previous', 'next', 'recognize', 'edit', 'context-menu']);
+defineEmits([
+  'close',
+  'previous',
+  'next',
+  'recognize',
+  'edit',
+  'favorite',
+  'prompt',
+  'context-menu',
+]);
 </script>
 
 <template>
   <div class="lightbox" role="dialog" aria-modal="true">
     <div class="lightbox-actions">
+      <button
+        v-if="currentItem.filePath || currentItem.prompt"
+        type="button"
+        class="lightbox-prompt"
+        title="查看图片提示词"
+        @click="$emit('prompt', currentItem)"
+      >
+        <MessageSquareText aria-hidden="true" />提示词
+      </button>
+      <button
+        v-if="currentItem.filePath"
+        type="button"
+        class="lightbox-favorite"
+        :class="{ active: currentItem.favorite }"
+        :disabled="favoriteUpdating"
+        title="切换收藏状态"
+        :aria-label="currentItem.favorite ? '取消收藏' : '收藏图片'"
+        :aria-pressed="currentItem.favorite === true"
+        :aria-busy="favoriteUpdating"
+        @click="$emit('favorite', currentItem)"
+      >
+        <Heart aria-hidden="true" />
+        {{ currentItem.favorite ? '已收藏' : '收藏' }}
+      </button>
       <button
         type="button"
         class="lightbox-ocr"

@@ -12,13 +12,17 @@ import AboutModal from './components/AboutModal.vue';
 import AppHeader from './components/AppHeader.vue';
 import ConfirmModal from './components/ConfirmModal.vue';
 import CreationPanel from './components/CreationPanel.vue';
+import GalleryOrganizeModal from './components/GalleryOrganizeModal.vue';
+import GenerationQueuePanel from './components/GenerationQueuePanel.vue';
 import ImageContextMenu from './components/ImageContextMenu.vue';
+import ImageCompareModal from './components/ImageCompareModal.vue';
 import ImageEditorModal from './components/ImageEditorModal.vue';
 import ImageLightbox from './components/ImageLightbox.vue';
 import InspirationSquare from './components/InspirationSquare.vue';
 import RenameModal from './components/RenameModal.vue';
 import OcrDrawer from './components/OcrDrawer.vue';
 import OnboardingModal from './components/OnboardingModal.vue';
+import PromptDetailsDrawer from './components/PromptDetailsDrawer.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import ToastMessage from './components/ToastMessage.vue';
 import WorksGallery from './components/WorksGallery.vue';
@@ -38,6 +42,9 @@ const status = ref('');
 const creationStatus = ref('');
 const settingsOpen = ref(false);
 const settingsSaving = ref(false);
+const localDataClearing = ref(false);
+const backupBusy = ref(false);
+const shortcutBindings = ref({});
 const aboutOpen = ref(false);
 const onboardingOpen = ref(false);
 const galleryDirectory = ref('');
@@ -50,20 +57,36 @@ const appInfo = ref({
 });
 const toast = ref(null);
 const gallery = ref([]);
+const galleryTrash = ref([]);
+const galleryTrashLoading = ref(false);
+const galleryTrashBusy = ref(false);
 const galleryLoaded = ref(false);
 const galleryLoading = ref(false);
 const galleryImporting = ref(false);
 const galleryColumnCount = ref(5);
+const activeGalleryScope = ref('all');
 const activeGalleryDate = ref('all');
 const gallerySearch = ref('');
+const galleryMetadataFacets = ref({ albums: [], tags: [] });
+const galleryMetadataSearchPaths = ref([]);
+const activeGalleryAlbum = ref('all');
+const activeGalleryTag = ref('all');
+const activeGalleryColor = ref('all');
 const gallerySelectionMode = ref(false);
 const selectedGalleryPaths = ref([]);
 const galleryExporting = ref(false);
 const galleryDeleting = ref(false);
+const galleryFavoriteUpdatingPaths = ref([]);
 const conversationDeleting = ref(false);
 const deleteConfirmation = ref(null);
 const preview = ref(null);
 const contextMenu = ref(null);
+const promptDetailsDrawer = ref(null);
+const promptMetadataSaving = ref(false);
+const galleryOrganizeModal = ref(null);
+const galleryOrganizing = ref(false);
+const imageCompare = ref(null);
+const imageVersionRestoring = ref(false);
 const renameModal = ref(null);
 const scrollContainer = ref(null);
 const creationGallery = ref(null);
@@ -86,6 +109,9 @@ let composerCollapseLockUntil = 0;
 let composerCollapseRequested = false;
 let viewRestoreFrame;
 let restoringViewScroll = false;
+let promptDetailsRequestId = 0;
+let galleryMetadataSearchTimer;
+let galleryMetadataSearchRequestId = 0;
 let startupIdleTimer;
 let conversationScrollSnapshot = null;
 let creationComposerRestoreTimer;
@@ -111,6 +137,7 @@ const showGalleryToast = (message, type = 'success') =>
 const form = useGenerationForm({
   status: creationStatus,
   showToast: showCreationToast,
+  onRequireConfiguration: () => openSettings(),
 });
 const {
   prompt,
@@ -131,6 +158,9 @@ const {
   generationMode,
   generationProgress,
   busy,
+  generationQueue,
+  queuePaused,
+  activeQueueTaskId,
   model,
   resolution,
   quality,
@@ -156,6 +186,7 @@ const {
   syncConversationImagePaths,
   removeConversationImagePath,
   addReferenceFromImage,
+  hydrateSecureApiKey,
   loadConversationReferences,
   regenerateFromConversation,
 } = form;
@@ -164,9 +195,19 @@ const ocr = useOcr(showToast);
 const currentPreview = computed(
   () => preview.value?.items[preview.value.index],
 );
+const favoriteGalleryCount = computed(
+  () => gallery.value.filter((item) => item.favorite).length,
+);
+const scopedGallery = computed(() =>
+  activeGalleryScope.value === 'trash'
+    ? galleryTrash.value
+    : activeGalleryScope.value === 'favorites'
+      ? gallery.value.filter((item) => item.favorite)
+      : gallery.value,
+);
 const galleryDateOptions = computed(() => {
   const counts = new Map();
-  gallery.value.forEach((item) => {
+  scopedGallery.value.forEach((item) => {
     const date = String(item.date || '').trim();
     if (!date) return;
     counts.set(date, (counts.get(date) || 0) + 1);
@@ -177,14 +218,33 @@ const galleryDateOptions = computed(() => {
 });
 const filteredGallery = computed(() => {
   const query = gallerySearch.value.trim().toLowerCase();
-  return gallery.value.filter((item) => {
+  const metadataMatches = new Set(galleryMetadataSearchPaths.value);
+  const isTrash = activeGalleryScope.value === 'trash';
+  return scopedGallery.value.filter((item) => {
     const matchesDate =
       activeGalleryDate.value === 'all' ||
       item.date === activeGalleryDate.value;
     const matchesSearch =
       !query ||
-      `${item.name || ''} ${item.date || ''}`.toLowerCase().includes(query);
-    return matchesDate && matchesSearch;
+      `${item.name || ''} ${item.title || ''} ${item.date || ''} ${item.album || ''} ${(item.tags || []).join(' ')} ${item.note || ''}`
+        .toLowerCase()
+        .includes(query) ||
+      metadataMatches.has(item.path);
+    const matchesAlbum =
+      isTrash ||
+      activeGalleryAlbum.value === 'all' ||
+      item.album === activeGalleryAlbum.value;
+    const matchesTag =
+      isTrash ||
+      activeGalleryTag.value === 'all' ||
+      (item.tags || []).includes(activeGalleryTag.value);
+    const matchesColor =
+      isTrash ||
+      activeGalleryColor.value === 'all' ||
+      item.colorLabel === activeGalleryColor.value;
+    return (
+      matchesDate && matchesSearch && matchesAlbum && matchesTag && matchesColor
+    );
   });
 });
 const galleryColumns = computed(() =>
@@ -199,7 +259,11 @@ const selectedGalleryCount = computed(() => selectedGalleryItems.value.length);
 const deleteConfirmationBusy = computed(() =>
   deleteConfirmation.value?.mode === 'conversation'
     ? conversationDeleting.value
-    : galleryDeleting.value,
+    : deleteConfirmation.value?.mode === 'local-data'
+      ? localDataClearing.value
+      : deleteConfirmation.value?.mode?.startsWith('trash')
+        ? galleryTrashBusy.value
+        : galleryDeleting.value,
 );
 const createStartMode = computed(
   () =>
@@ -373,24 +437,116 @@ function galleryPreviewItems() {
     src: item.data,
     name: item.name,
     filePath: item.path,
-    editable: true,
+    editable: !item.trashId,
+    favorite: item.favorite === true,
+    favoritedAt: item.favoritedAt || null,
+    trashId: item.trashId || '',
   }));
+}
+
+function favoriteStateForPath(filePath) {
+  const item = gallery.value.find((entry) => entry.path === filePath);
+  return {
+    favorite: item?.favorite === true,
+    favoritedAt: item?.favoritedAt || null,
+  };
 }
 
 function generatedPreviewItems() {
-  return images.value.map((source, index) => ({
-    src: source,
-    name: `Generated image ${index + 1}`,
-    filePath: imagePaths.value[index],
-  }));
+  return images.value.map((source, index) => {
+    const filePath = imagePaths.value[index];
+    return {
+      src: source,
+      name: `Generated image ${index + 1}`,
+      filePath,
+      ...favoriteStateForPath(filePath),
+    };
+  });
 }
 
 function conversationPreviewItems(turn) {
-  return (turn?.images || []).map((source, index) => ({
-    src: source,
-    name: `生成图片 ${index + 1}`,
-    filePath: turn.imagePaths?.[index],
-  }));
+  return (turn?.images || []).map((source, index) => {
+    const filePath = turn.imagePaths?.[index];
+    const storedState = turn.imageFavorites?.[index];
+    const galleryState = favoriteStateForPath(filePath);
+    return {
+      src: source,
+      name: `生成图片 ${index + 1}`,
+      filePath,
+      favorite: galleryState.favorite || storedState?.favorite === true,
+      favoritedAt: galleryState.favoritedAt || storedState?.favoritedAt || null,
+    };
+  });
+}
+
+function syncFavoriteState(nextItem) {
+  const filePath = nextItem?.path;
+  if (!filePath) return;
+  gallery.value = gallery.value.map((item) =>
+    item.path === filePath ? { ...item, ...nextItem } : item,
+  );
+  conversationHistory.value.forEach((turn) => {
+    const index = turn.imagePaths?.indexOf(filePath) ?? -1;
+    if (index < 0) return;
+    if (!Array.isArray(turn.imageFavorites)) turn.imageFavorites = [];
+    turn.imageFavorites[index] = {
+      favorite: nextItem.favorite === true,
+      favoritedAt: nextItem.favoritedAt || null,
+    };
+  });
+  if (preview.value?.items?.length) {
+    preview.value = {
+      ...preview.value,
+      items: preview.value.items.map((item) =>
+        item.filePath === filePath
+          ? {
+              ...item,
+              favorite: nextItem.favorite === true,
+              favoritedAt: nextItem.favoritedAt || null,
+            }
+          : item,
+      ),
+    };
+  }
+  if (contextMenu.value?.filePath === filePath) {
+    contextMenu.value = {
+      ...contextMenu.value,
+      favorite: nextItem.favorite === true,
+      favoritedAt: nextItem.favoritedAt || null,
+    };
+  }
+}
+
+async function toggleGalleryFavorite(item) {
+  const filePath = String(item?.path || item?.filePath || '');
+  if (!filePath || galleryFavoriteUpdatingPaths.value.includes(filePath)) {
+    return;
+  }
+  if (!window.forge?.setGalleryFavorite) {
+    showToast('收藏服务不可用，请重启 Loomora', 'error');
+    return;
+  }
+  const current =
+    typeof item?.favorite === 'boolean'
+      ? item.favorite
+      : favoriteStateForPath(filePath).favorite;
+  galleryFavoriteUpdatingPaths.value = [
+    ...galleryFavoriteUpdatingPaths.value,
+    filePath,
+  ];
+  try {
+    const nextItem = await window.forge.setGalleryFavorite(filePath, !current);
+    syncFavoriteState(nextItem);
+    showToast(nextItem.favorite ? '已加入收藏' : '已取消收藏');
+  } catch (error) {
+    showToast(
+      formatUserMessage(error, '更新收藏状态失败，请稍后重试'),
+      'error',
+    );
+  } finally {
+    galleryFavoriteUpdatingPaths.value =
+      galleryFavoriteUpdatingPaths.value.filter((path) => path !== filePath);
+  }
 }
 
 function clearGallerySelection() {
@@ -490,9 +646,11 @@ async function exportGalleryImages(scope) {
       const exportLabel =
         scope === 'selected'
           ? '勾选图片'
-          : activeGalleryDate.value === 'all'
-            ? '全部作品'
-            : '当前日期作品';
+          : activeGalleryScope.value === 'favorites'
+            ? '收藏作品'
+            : activeGalleryDate.value === 'all'
+              ? '全部作品'
+              : '当前日期作品';
       status.value =
         scope === 'selected'
           ? `已导出 ${result.exported} 张${exportLabel}${detail}`
@@ -539,9 +697,9 @@ function deleteSelectedGalleryImages() {
     mode: 'batch',
     targetView: 'gallery',
     filePaths,
-    title: '删除已选图片',
-    message: `确定要永久删除选中的 ${filePaths.length} 张本地图片吗？`,
-    detail: '删除后无法恢复，创作记录中的图片引用也会同步移除。',
+    title: '移入回收站',
+    message: `确定把选中的 ${filePaths.length} 张图片移入回收站吗？`,
+    detail: '图片可从回收站恢复，彻底删除后才无法找回。',
   };
 }
 
@@ -560,10 +718,9 @@ function clearAllGalleryImages() {
     mode: 'all',
     targetView: 'gallery',
     filePaths,
-    title: '清空全部作品',
-    message: `确定要永久删除作品库中的 ${filePaths.length} 张图片吗？`,
-    detail:
-      '此操作不受当前日期或搜索筛选影响，删除后无法恢复。创作记录中的图片引用也会同步移除。',
+    title: '全部移入回收站',
+    message: `确定把作品库中的 ${filePaths.length} 张图片全部移入回收站吗？`,
+    detail: '此操作不受当前日期或搜索筛选影响，之后仍可在回收站恢复。',
   };
 }
 
@@ -608,10 +765,10 @@ async function confirmDeleteImages() {
     if (removedPaths.length) {
       if (request.mode === 'single') {
         status.value = deletedPaths.length
-          ? '图片已永久删除'
+          ? '图片已移入回收站'
           : '图片文件已不存在，已从作品库移除';
       } else if (request.mode === 'all') {
-        status.value = `作品库已清空，共移除 ${removedPaths.length} 张图片`;
+        status.value = `已将 ${removedPaths.length} 张图片移入回收站`;
       } else {
         status.value = `已移除 ${removedPaths.length} 张本地图片`;
       }
@@ -625,6 +782,7 @@ async function confirmDeleteImages() {
         failedCount || historySyncError ? 'error' : 'success',
       );
       if (request.mode !== 'single' && !failedCount) clearGallerySelection();
+      await loadGalleryTrash();
     } else if (failedCount) {
       status.value = `删除失败：${result.failed[0].error}`;
       showDeleteToast(status.value, 'error');
@@ -711,6 +869,8 @@ function syncRenamedImage(oldPath, nextItem) {
               src: nextItem.data || item.src,
               name: nextItem.name || item.name,
               filePath: nextItem.path,
+              favorite: nextItem.favorite === true,
+              favoritedAt: nextItem.favoritedAt || null,
             }
           : item,
       ),
@@ -734,10 +894,26 @@ async function findGenerationTurnByImage(filePath) {
   }
 }
 
+async function findFavoriteStateByImage(filePath) {
+  if (!filePath) return { favorite: false, favoritedAt: null };
+  const localState = favoriteStateForPath(filePath);
+  if (localState.favorite || !window.forge?.getGalleryFavorite) {
+    return localState;
+  }
+  try {
+    return await window.forge.getGalleryFavorite(filePath);
+  } catch {
+    return localState;
+  }
+}
+
 async function showImageMenu(event, source, filePath = '', editable = false) {
   event.preventDefault();
   const targetView = view.value;
-  const generationTurn = await findGenerationTurnByImage(filePath);
+  const [generationTurn, favoriteState] = await Promise.all([
+    findGenerationTurnByImage(filePath),
+    findFavoriteStateByImage(filePath),
+  ]);
   contextMenu.value = {
     x: event.clientX,
     y: event.clientY,
@@ -747,7 +923,255 @@ async function showImageMenu(event, source, filePath = '', editable = false) {
     regeneratable: Boolean(generationTurn),
     generationTurn,
     targetView,
+    ...favoriteState,
   };
+}
+
+async function toggleContextFavorite() {
+  const item = contextMenu.value;
+  if (!item?.filePath) return;
+  contextMenu.value = null;
+  await toggleGalleryFavorite(item);
+}
+
+function closePromptDetails() {
+  promptDetailsRequestId += 1;
+  promptDetailsDrawer.value = null;
+}
+
+function promptDetailsFromItem(item = {}, metadata = {}) {
+  const filePath = String(item.path || item.filePath || metadata.path || '');
+  return {
+    image: item.image || item.data || item.src || '',
+    name:
+      item.title || item.name || metadata.name || basenameFromPath(filePath),
+    prompt: String(metadata.prompt || item.prompt || ''),
+    model: metadata.model || item.model || '',
+    ratio: metadata.ratio || item.ratio || '',
+    resolution: metadata.resolution || item.resolution || '',
+    quality: metadata.quality || item.quality || '',
+    outputFormat: metadata.outputFormat || item.outputFormat || '',
+    createdAt: metadata.createdAt || item.createdAt || 0,
+    source: metadata.source || item.source || (filePath ? 'manual' : ''),
+    tag: item.tag || '',
+    mood: item.mood || '',
+    title: metadata.title || item.title || '',
+    note: metadata.note || item.note || '',
+    tags: metadata.tags || item.tags || [],
+    album: metadata.album || item.album || '',
+    colorLabel: metadata.colorLabel || item.colorLabel || '',
+    version: metadata.version || item.version || 1,
+    versions: metadata.versions || item.versions || [],
+    width: metadata.width || item.width || 0,
+    height: metadata.height || item.height || 0,
+    fileSize: metadata.fileSize || item.fileSize || 0,
+    modifiedAt: metadata.modifiedAt || item.modifiedAt || 0,
+    filePath,
+  };
+}
+
+async function saveImageMetadata(metadata) {
+  const details = promptDetailsDrawer.value?.details;
+  if (!details?.filePath || promptMetadataSaving.value) return;
+  promptMetadataSaving.value = true;
+  try {
+    const result = await window.forge.updateGalleryImageMetadata(
+      details.filePath,
+      metadata,
+    );
+    gallery.value = gallery.value.map((item) =>
+      item.path === result.path ? { ...item, ...result } : item,
+    );
+    const refreshed = await window.forge.getGalleryImageMetadata(
+      details.filePath,
+    );
+    promptDetailsDrawer.value = {
+      loading: false,
+      error: '',
+      details: promptDetailsFromItem(
+        { ...details, ...result, data: details.image },
+        refreshed,
+      ),
+    };
+    await refreshGalleryMetadataFacets();
+    showToast('作品信息已保存');
+  } catch (error) {
+    showToast(
+      formatUserMessage(error, '作品信息保存失败，请稍后重试'),
+      'error',
+    );
+  } finally {
+    promptMetadataSaving.value = false;
+  }
+}
+
+async function refreshGalleryMetadataFacets() {
+  if (!window.forge?.getGalleryMetadataFacets) return;
+  try {
+    galleryMetadataFacets.value = await window.forge.getGalleryMetadataFacets();
+  } catch {
+    galleryMetadataFacets.value = { albums: [], tags: [] };
+  }
+}
+
+function openGalleryOrganizeModal() {
+  if (!selectedGalleryCount.value) {
+    showGalleryToast('请先勾选要整理的作品', 'error');
+    return;
+  }
+  galleryOrganizeModal.value = {
+    count: selectedGalleryCount.value,
+    albums: galleryMetadataFacets.value.albums || [],
+    tags: galleryMetadataFacets.value.tags || [],
+  };
+}
+
+async function organizeSelectedGallery(payload = {}) {
+  if (galleryOrganizing.value || !selectedGalleryItems.value.length) return;
+  galleryOrganizing.value = true;
+  try {
+    const addedTags = Array.isArray(payload.tags) ? payload.tags : [];
+    const results = [];
+    for (const item of selectedGalleryItems.value) {
+      const metadata = {
+        tags: Array.from(new Set([...(item.tags || []), ...addedTags])),
+      };
+      if (payload.album) metadata.album = payload.album;
+      if (payload.colorLabel !== 'keep') {
+        metadata.colorLabel = payload.colorLabel || '';
+      }
+      results.push(
+        await window.forge.updateGalleryImageMetadata(item.path, metadata),
+      );
+    }
+    const updates = new Map(results.map((item) => [item.path, item]));
+    gallery.value = gallery.value.map((item) =>
+      updates.has(item.path) ? { ...item, ...updates.get(item.path) } : item,
+    );
+    galleryOrganizeModal.value = null;
+    clearGallerySelection();
+    await refreshGalleryMetadataFacets();
+    showGalleryToast(`已整理 ${results.length} 张作品`, 'success');
+  } catch (error) {
+    showGalleryToast(
+      formatUserMessage(error, '批量整理失败，请稍后重试'),
+      'error',
+    );
+  } finally {
+    galleryOrganizing.value = false;
+  }
+}
+
+async function openImagePrompt(item = {}) {
+  const requestId = ++promptDetailsRequestId;
+  const directDetails = promptDetailsFromItem(item);
+  if (directDetails.prompt && !directDetails.filePath) {
+    promptDetailsDrawer.value = {
+      loading: false,
+      error: '',
+      details: directDetails,
+    };
+    return;
+  }
+
+  const filePath = directDetails.filePath;
+  if (!filePath) return;
+  promptDetailsDrawer.value = {
+    loading: true,
+    error: '',
+    details: directDetails,
+  };
+  try {
+    let metadata;
+    if (window.forge?.getGalleryImageMetadata) {
+      metadata = await window.forge.getGalleryImageMetadata(filePath);
+    } else {
+      const turn =
+        item.generationTurn || (await findGenerationTurnByImage(filePath));
+      metadata = turn
+        ? { ...turn, source: 'generated', conversationId: turn.id }
+        : {};
+    }
+    if (requestId !== promptDetailsRequestId) return;
+    promptDetailsDrawer.value = {
+      loading: false,
+      error: '',
+      details: promptDetailsFromItem(item, metadata),
+    };
+  } catch (error) {
+    if (requestId !== promptDetailsRequestId) return;
+    promptDetailsDrawer.value = {
+      loading: false,
+      error: formatUserMessage(error, '提示词读取失败，请稍后重试'),
+      details: directDetails,
+    };
+  }
+}
+
+function viewContextPrompt() {
+  const item = contextMenu.value;
+  if (!item) return;
+  contextMenu.value = null;
+  openImagePrompt(item);
+}
+
+async function copyImagePrompt() {
+  const text = String(promptDetailsDrawer.value?.details?.prompt || '').trim();
+  if (!text) return;
+  try {
+    await window.forge.copyText(text);
+    showToast('提示词已复制');
+  } catch (error) {
+    showToast(formatUserMessage(error, '复制提示词失败，请稍后重试'), 'error');
+  }
+}
+
+async function useImagePrompt() {
+  const details = promptDetailsDrawer.value?.details;
+  if (!details?.prompt) return;
+  prompt.value = details.prompt;
+  if (details.model) model.value = details.model;
+  if (details.ratio) ratio.value = details.ratio;
+  if (details.resolution) resolution.value = details.resolution;
+  if (details.quality) quality.value = details.quality;
+  if (details.outputFormat) outputFormat.value = details.outputFormat;
+  count.value = 1;
+  closePromptDetails();
+  closePreview();
+  await openCreateComposerExpanded();
+  creationStatus.value = '已填入图片提示词，可继续调整后生成';
+  showCreationToast(creationStatus.value);
+}
+
+function openImageVersionCompare() {
+  const details = promptDetailsDrawer.value?.details;
+  if (!details?.versions?.length) return;
+  imageCompare.value = {
+    versions: details.versions,
+    currentPath: details.filePath,
+  };
+}
+
+async function restoreImageVersion(version) {
+  if (!version?.path || imageVersionRestoring.value) return;
+  imageVersionRestoring.value = true;
+  try {
+    const result = await window.forge.restoreGalleryImageVersion(version.path);
+    if (result?.item) {
+      gallery.value = sortGalleryItems([result.item, ...gallery.value]);
+      galleryLoaded.value = true;
+    }
+    imageCompare.value = null;
+    closePromptDetails();
+    showGalleryToast('旧版本已恢复为新的作品版本', 'success');
+  } catch (error) {
+    showGalleryToast(
+      formatUserMessage(error, '版本恢复失败，请稍后重试'),
+      'error',
+    );
+  } finally {
+    imageVersionRestoring.value = false;
+  }
 }
 
 async function copyContextImage() {
@@ -866,6 +1290,14 @@ async function deleteConversationRecord(turnId) {
 async function confirmDeleteRequest() {
   const request = deleteConfirmation.value;
   if (!request) return;
+  if (request.mode === 'local-data') {
+    await clearLocalData();
+    return;
+  }
+  if (request.mode?.startsWith('trash')) {
+    await confirmDeleteTrash();
+    return;
+  }
   if (request.mode !== 'conversation') {
     await confirmDeleteImages();
     return;
@@ -1222,8 +1654,8 @@ function deleteContextImage() {
     targetView,
     filePaths: [filePath],
     title: '删除图片',
-    message: '确定要永久删除这张本地图片吗？',
-    detail: `${fileName}\n删除后无法恢复，创作记录中的图片引用也会同步移除。`,
+    message: '确定将这张本地图片移入回收站吗？',
+    detail: `${fileName}\n移入后可在作品库的回收站中恢复，创作记录中的图片会暂时隐藏。`,
   };
 }
 
@@ -1279,8 +1711,14 @@ async function openGallery() {
   galleryLoading.value = true;
   await nextTick();
   try {
-    gallery.value = sortGalleryItems(await window.forge.listGallery());
+    const [galleryItems, trashItems] = await Promise.all([
+      window.forge.listGallery(),
+      window.forge.listGalleryTrash?.() || [],
+    ]);
+    gallery.value = sortGalleryItems(galleryItems);
+    galleryTrash.value = trashItems;
     galleryLoaded.value = true;
+    refreshGalleryMetadataFacets();
   } catch (error) {
     galleryLoaded.value = false;
     status.value = formatUserMessage(error, '作品库加载失败，请稍后重试');
@@ -1288,6 +1726,83 @@ async function openGallery() {
   } finally {
     galleryLoading.value = false;
     nextTick(updateScrollbar);
+  }
+}
+
+async function loadGalleryTrash() {
+  if (!window.forge?.listGalleryTrash || galleryTrashLoading.value) return;
+  galleryTrashLoading.value = true;
+  try {
+    galleryTrash.value = await window.forge.listGalleryTrash();
+  } catch (error) {
+    showGalleryToast(
+      formatUserMessage(error, '回收站读取失败，请稍后重试'),
+      'error',
+    );
+  } finally {
+    galleryTrashLoading.value = false;
+  }
+}
+
+async function restoreGalleryTrashItem(item) {
+  if (!item?.trashId || galleryTrashBusy.value) return;
+  galleryTrashBusy.value = true;
+  try {
+    const result = await window.forge.restoreGalleryTrashItem(item.trashId);
+    if (result?.item) {
+      gallery.value = sortGalleryItems([result.item, ...gallery.value]);
+    }
+    galleryTrash.value = galleryTrash.value.filter(
+      (entry) => entry.trashId !== item.trashId,
+    );
+    showGalleryToast('图片已恢复到原作品目录', 'success');
+  } catch (error) {
+    showGalleryToast(formatUserMessage(error, '图片恢复失败'), 'error');
+  } finally {
+    galleryTrashBusy.value = false;
+  }
+}
+
+function requestDeleteTrashItem(item) {
+  if (!item?.trashId) return;
+  deleteConfirmation.value = {
+    mode: 'trash-single',
+    targetView: 'gallery',
+    trashIds: [item.trashId],
+    title: '彻底删除图片',
+    message: `确定永久删除“${item.name}”吗？`,
+    detail: '彻底删除后无法恢复，对应的本地提示词和版本信息也会移除。',
+  };
+}
+
+function requestEmptyGalleryTrash() {
+  if (!galleryTrash.value.length) return;
+  deleteConfirmation.value = {
+    mode: 'trash-all',
+    targetView: 'gallery',
+    trashIds: galleryTrash.value.map((item) => item.trashId),
+    title: '清空回收站',
+    message: `确定永久删除回收站中的 ${galleryTrash.value.length} 张图片吗？`,
+    detail: '清空后所有图片及对应本地元数据都无法恢复。',
+  };
+}
+
+async function confirmDeleteTrash() {
+  const request = deleteConfirmation.value;
+  if (!request?.mode?.startsWith('trash') || galleryTrashBusy.value) return;
+  galleryTrashBusy.value = true;
+  try {
+    const result =
+      request.mode === 'trash-all'
+        ? await window.forge.emptyGalleryTrash()
+        : await window.forge.deleteGalleryTrashItems(request.trashIds);
+    await loadGalleryTrash();
+    deleteConfirmation.value = null;
+    showGalleryToast(`已彻底删除 ${result.deleted || 0} 张图片`, 'success');
+  } catch (error) {
+    showGalleryToast(formatUserMessage(error, '彻底删除失败'), 'error');
+  } finally {
+    galleryTrashBusy.value = false;
   }
 }
 
@@ -1309,13 +1824,18 @@ async function importGalleryImages(files) {
     }
     const importedCount = result.items.length;
     const failedCount = result.failed.length;
-    if (!importedCount && failedCount) {
+    const duplicateCount = result.duplicates?.length || 0;
+    if (!importedCount && duplicateCount && !failedCount) {
+      status.value = `未导入重复图片，已跳过 ${duplicateCount} 张`;
+      showGalleryToast(status.value, 'success');
+    } else if (!importedCount && failedCount) {
       status.value = `图片导入失败：${result.failed[0].error}`;
       showGalleryToast(status.value, 'error');
     } else {
-      status.value = failedCount
-        ? `成功导入 ${importedCount} 张图片，${failedCount} 张失败`
-        : `成功导入 ${importedCount} 张图片`;
+      const details = [];
+      if (duplicateCount) details.push(`${duplicateCount} 张重复图片已跳过`);
+      if (failedCount) details.push(`${failedCount} 张失败`);
+      status.value = `成功导入 ${importedCount} 张图片${details.length ? `，${details.join('，')}` : ''}`;
       showGalleryToast(status.value, failedCount ? 'error' : 'success');
     }
     nextTick(updateScrollbar);
@@ -1337,7 +1857,7 @@ async function loadGalleryStorageSettings() {
 async function openSettings() {
   form.resetSettingsDraft();
   try {
-    await loadGalleryStorageSettings();
+    await Promise.all([loadGalleryStorageSettings(), loadShortcutBindings()]);
   } catch (error) {
     showToast(
       formatUserMessage(error, '读取本地存储设置失败，请稍后重试'),
@@ -1347,7 +1867,77 @@ async function openSettings() {
   settingsOpen.value = true;
 }
 
-async function saveSettings(endpoint, apiKey, storagePath) {
+function requestClearLocalData() {
+  if (localDataClearing.value) return;
+  if (busy.value) {
+    showToast('请先等待当前图片生成完成，再清除本地数据', 'error');
+    return;
+  }
+  settingsOpen.value = false;
+  deleteConfirmation.value = {
+    mode: 'local-data',
+    targetView: view.value,
+    title: '清除本地数据',
+    message: '确定要永久清除此设备上的 Loomora 数据吗？',
+    detail:
+      '将删除作品、创作历史、参考图缓存、接口配置和首次使用状态。自定义存储目录中只清除 Loomora 管理的内容，此操作无法撤销。',
+  };
+}
+
+async function clearLocalData() {
+  if (localDataClearing.value) return;
+  if (!window.forge?.clearLocalData) {
+    showToast('本地数据清理服务不可用，请重启 Loomora', 'error');
+    return;
+  }
+  localDataClearing.value = true;
+  try {
+    const result = (await window.forge.clearLocalData()) || {};
+    form.clearLocalSettings();
+    gallery.value = [];
+    galleryTrash.value = [];
+    galleryLoaded.value = true;
+    activeGalleryScope.value = 'all';
+    activeGalleryDate.value = 'all';
+    gallerySearch.value = '';
+    galleryMetadataFacets.value = { albums: [], tags: [] };
+    galleryMetadataSearchPaths.value = [];
+    activeGalleryAlbum.value = 'all';
+    activeGalleryTag.value = 'all';
+    activeGalleryColor.value = 'all';
+    galleryFavoriteUpdatingPaths.value = [];
+    closePromptDetails();
+    clearGallerySelection();
+    creationHistoryVisible.value = false;
+    preview.value = null;
+    contextMenu.value = null;
+    renameModal.value = null;
+    galleryDirectory.value = String(result.storage?.directory || '');
+    defaultGalleryDirectory.value = String(
+      result.storage?.defaultDirectory || '',
+    );
+    deleteConfirmation.value = null;
+    const failedCount = Array.isArray(result.failed) ? result.failed.length : 0;
+    if (failedCount) {
+      showToast(
+        `本地数据已部分清除，另有 ${failedCount} 个位置清理失败`,
+        'error',
+      );
+    } else {
+      showToast('本地数据已清除');
+    }
+    nextTick(updateScrollbar);
+  } catch (error) {
+    showToast(
+      formatUserMessage(error, '清除本地数据失败，请稍后重试'),
+      'error',
+    );
+  } finally {
+    localDataClearing.value = false;
+  }
+}
+
+async function saveSettings(endpoint, apiKey, storagePath, shortcuts) {
   if (settingsSaving.value) return;
   settingsSaving.value = true;
   const previousDirectory = galleryDirectory.value;
@@ -1361,7 +1951,8 @@ async function saveSettings(endpoint, apiKey, storagePath) {
     );
     settingsEndpoint.value = endpoint;
     settingsApiKey.value = apiKey;
-    form.saveSettings();
+    await form.saveSettings();
+    shortcutBindings.value = await window.forge.setShortcuts(shortcuts);
     settingsOpen.value = false;
 
     if (galleryDirectory.value !== previousDirectory) {
@@ -1379,6 +1970,51 @@ async function saveSettings(endpoint, apiKey, storagePath) {
     showToast(formatUserMessage(error, '保存设置失败，请稍后重试'), 'error');
   } finally {
     settingsSaving.value = false;
+  }
+}
+
+async function loadShortcutBindings() {
+  if (!window.forge?.getShortcuts) return;
+  shortcutBindings.value = await window.forge.getShortcuts();
+}
+
+async function createLocalBackup() {
+  if (backupBusy.value || !window.forge?.createLocalBackup) return;
+  backupBusy.value = true;
+  try {
+    const result = await window.forge.createLocalBackup();
+    if (result?.canceled) return;
+    const failed = Array.isArray(result?.failed) ? result.failed.length : 0;
+    showToast(
+      `已备份 ${result?.count || 0} 张作品和 ${result?.conversationCount || 0} 条对话${failed ? `，${failed} 项失败` : ''}`,
+      failed ? 'error' : 'success',
+    );
+  } catch (error) {
+    showToast(formatUserMessage(error, '创建备份失败，请稍后重试'), 'error');
+  } finally {
+    backupBusy.value = false;
+  }
+}
+
+async function restoreLocalBackup() {
+  if (backupBusy.value || !window.forge?.restoreLocalBackup) return;
+  backupBusy.value = true;
+  try {
+    const result = await window.forge.restoreLocalBackup();
+    if (result?.canceled) return;
+    gallery.value = sortGalleryItems(await window.forge.listGallery());
+    galleryLoaded.value = true;
+    await refreshGalleryMetadataFacets();
+    const failed = Array.isArray(result?.failed) ? result.failed.length : 0;
+    showToast(
+      `已恢复 ${result?.restored || 0} 张作品和 ${result?.restoredConversations || 0} 条对话${failed ? `，${failed} 项失败` : ''}`,
+      failed ? 'error' : 'success',
+    );
+    nextTick(updateScrollbar);
+  } catch (error) {
+    showToast(formatUserMessage(error, '恢复备份失败，请检查备份包'), 'error');
+  } finally {
+    backupBusy.value = false;
   }
 }
 
@@ -1429,7 +2065,9 @@ function recognizePreview() {
 }
 
 function onPaste(event) {
-  if (aboutOpen.value || onboardingOpen.value) return;
+  if (aboutOpen.value || onboardingOpen.value || promptDetailsDrawer.value) {
+    return;
+  }
   form.handlePaste(event, {
     view: view.value,
     editorOpen: editor.open.value,
@@ -1437,11 +2075,95 @@ function onPaste(event) {
   });
 }
 
+function isTypingTarget(target) {
+  return Boolean(
+    target?.matches?.('input, textarea, select, [contenteditable="true"]'),
+  );
+}
+
+function matchesShortcut(event, binding = {}) {
+  if (!binding.code || event.code !== binding.code) return false;
+  const expectedCtrl = binding.mod ? !isMacPlatform : Boolean(binding.ctrl);
+  const expectedMeta = binding.mod ? isMacPlatform : Boolean(binding.meta);
+  return (
+    event.ctrlKey === expectedCtrl &&
+    event.metaKey === expectedMeta &&
+    event.altKey === Boolean(binding.alt) &&
+    event.shiftKey === Boolean(binding.shift)
+  );
+}
+
+async function copyCurrentImagePrompt() {
+  const item = currentPreview.value;
+  if (!item?.filePath) return;
+  try {
+    const metadata = await window.forge.getGalleryImageMetadata(item.filePath);
+    const text = String(metadata?.prompt || '').trim();
+    if (!text) {
+      showToast('当前图片没有保存提示词', 'error');
+      return;
+    }
+    await window.forge.copyText(text);
+    showToast('提示词已复制');
+  } catch (error) {
+    showToast(formatUserMessage(error, '复制提示词失败'), 'error');
+  }
+}
+
+function requestDeleteCurrentPreview() {
+  const item = currentPreview.value;
+  if (!item?.filePath) return;
+  if (item.trashId) {
+    const trashItem = galleryTrash.value.find(
+      (entry) => entry.trashId === item.trashId,
+    );
+    if (trashItem) requestDeleteTrashItem(trashItem);
+    closePreview();
+    return;
+  }
+  deleteConfirmation.value = {
+    mode: 'single',
+    targetView: view.value,
+    filePaths: [item.filePath],
+    title: '删除图片',
+    message: '确定将当前图片移入回收站吗？',
+    detail: `${item.name || basenameFromPath(item.filePath)}\n移入后可在作品库的回收站中恢复。`,
+  };
+  closePreview();
+}
+
+function handleConfiguredShortcut(event) {
+  const bindings = shortcutBindings.value;
+  const action = Object.keys(bindings).find((key) =>
+    matchesShortcut(event, bindings[key]),
+  );
+  if (!action) return false;
+  event.preventDefault();
+  if (action === 'create') returnToCreationStart();
+  else if (action === 'gallery') openGallery();
+  else if (action === 'previousImage' && preview.value) movePreview(-1);
+  else if (action === 'nextImage' && preview.value) movePreview(1);
+  else if (action === 'favorite' && currentPreview.value?.filePath) {
+    toggleGalleryFavorite(currentPreview.value);
+  } else if (action === 'viewPrompt' && currentPreview.value) {
+    openImagePrompt(currentPreview.value);
+  } else if (action === 'copyPrompt' && currentPreview.value) {
+    copyCurrentImagePrompt();
+  } else if (action === 'deleteImage' && currentPreview.value) {
+    requestDeleteCurrentPreview();
+  }
+  return true;
+}
+
 function onKeydown(event) {
   if (event.key === 'Escape') {
     if (onboardingOpen.value || aboutOpen.value) return;
     if (deleteConfirmation.value) return;
-    if (renameModal.value) renameModal.value = null;
+    if (imageCompare.value) imageCompare.value = null;
+    else if (galleryOrganizeModal.value && !galleryOrganizing.value) {
+      galleryOrganizeModal.value = null;
+    } else if (promptDetailsDrawer.value) closePromptDetails();
+    else if (renameModal.value) renameModal.value = null;
     else if (settingsOpen.value) settingsOpen.value = false;
     else if (ocr.open.value) ocr.close();
     else if (editor.open.value) editor.close();
@@ -1453,8 +2175,16 @@ function onKeydown(event) {
     }
     return;
   }
-  if (preview.value && event.key === 'ArrowLeft') movePreview(-1);
-  if (preview.value && event.key === 'ArrowRight') movePreview(1);
+  if (isTypingTarget(event.target)) return;
+  if (
+    onboardingOpen.value ||
+    aboutOpen.value ||
+    settingsOpen.value ||
+    deleteConfirmation.value
+  ) {
+    return;
+  }
+  handleConfiguredShortcut(event);
 }
 
 onMounted(() => {
@@ -1477,6 +2207,8 @@ onMounted(() => {
     })
     .catch(() => {});
   loadOnboardingState();
+  hydrateSecureApiKey();
+  loadShortcutBindings().catch(() => {});
   nextTick(updateScrollbar);
   const runDeferredStartup = () => {
     loadConversationHistory();
@@ -1512,6 +2244,28 @@ watch(galleryDateOptions, (options) => {
 
 watch(gallery, pruneGallerySelection);
 
+watch(gallerySearch, (value) => {
+  window.clearTimeout(galleryMetadataSearchTimer);
+  const query = String(value || '').trim();
+  const requestId = ++galleryMetadataSearchRequestId;
+  if (!query || !window.forge?.searchGalleryMetadata) {
+    galleryMetadataSearchPaths.value = [];
+    return;
+  }
+  galleryMetadataSearchTimer = window.setTimeout(async () => {
+    try {
+      const paths = await window.forge.searchGalleryMetadata(query);
+      if (requestId === galleryMetadataSearchRequestId) {
+        galleryMetadataSearchPaths.value = Array.isArray(paths) ? paths : [];
+      }
+    } catch {
+      if (requestId === galleryMetadataSearchRequestId) {
+        galleryMetadataSearchPaths.value = [];
+      }
+    }
+  }, 160);
+});
+
 watch(
   () => imagePaths.value.slice(),
   (nextPaths, previousPaths) => {
@@ -1528,6 +2282,18 @@ watch(
 );
 
 watch(activeGalleryDate, () => {
+  clearGallerySelection();
+  if (preview.value) closePreview();
+});
+
+watch(activeGalleryScope, (scope) => {
+  activeGalleryDate.value = 'all';
+  clearGallerySelection();
+  if (preview.value) closePreview();
+  if (scope === 'trash') loadGalleryTrash();
+});
+
+watch([activeGalleryAlbum, activeGalleryTag, activeGalleryColor], () => {
   clearGallerySelection();
   if (preview.value) closePreview();
 });
@@ -1566,6 +2332,7 @@ watch(view, (nextView, previousView) => {
 });
 
 onBeforeUnmount(() => {
+  window.clearTimeout(galleryMetadataSearchTimer);
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('paste', onPaste);
   window.removeEventListener('resize', updateScrollbar);
@@ -1616,12 +2383,12 @@ onBeforeUnmount(() => {
           type="button"
           :class="{ active: activeGalleryDate === 'all' }"
           :aria-pressed="activeGalleryDate === 'all'"
-          :title="`全部作品：${gallery.length} 张`"
+          :title="`当前分类：${scopedGallery.length} 张`"
           @click="activeGalleryDate = 'all'"
         >
           <Images class="gallery-timeline-icon" aria-hidden="true" />
           <span>全部</span>
-          <b>{{ gallery.length }} 张</b>
+          <b>{{ scopedGallery.length }} 张</b>
         </button>
         <button
           v-for="option in galleryDateOptions"
@@ -1700,17 +2467,28 @@ onBeforeUnmount(() => {
                 :live-progress="generationProgress"
                 :live-active="busy"
                 :gallery="filteredGallery"
+                :gallery-total="gallery.length"
+                :gallery-favorite-count="favoriteGalleryCount"
+                :gallery-trash-count="galleryTrash.length"
+                :gallery-trash-busy="galleryTrashBusy"
+                :gallery-scope="activeGalleryScope"
                 :gallery-columns="galleryColumns"
                 :gallery-column-count="galleryColumnCount"
                 :gallery-loading="galleryLoading"
                 :gallery-importing="galleryImporting"
                 :gallery-filter-date="activeGalleryDate"
                 :gallery-search="gallerySearch"
+                :gallery-albums="galleryMetadataFacets.albums"
+                :gallery-tags="galleryMetadataFacets.tags"
+                :gallery-album="activeGalleryAlbum"
+                :gallery-tag="activeGalleryTag"
+                :gallery-color="activeGalleryColor"
                 :gallery-selection-mode="gallerySelectionMode"
                 :gallery-selected-paths="selectedGalleryPaths"
                 :gallery-selected-count="selectedGalleryCount"
                 :gallery-exporting="galleryExporting"
                 :gallery-deleting="galleryDeleting"
+                :gallery-favorite-updating-paths="galleryFavoriteUpdatingPaths"
                 @preview="openPreview"
                 @context-menu="showImageMenu"
                 @load-older-conversations="loadOlderConversations"
@@ -1733,6 +2511,16 @@ onBeforeUnmount(() => {
                 @export-selected="exportGalleryImages('selected')"
                 @clear-all="clearAllGalleryImages"
                 @delete-selected="deleteSelectedGalleryImages"
+                @toggle-favorite="toggleGalleryFavorite"
+                @view-prompt="openImagePrompt"
+                @organize-selected="openGalleryOrganizeModal"
+                @restore-trash="restoreGalleryTrashItem"
+                @delete-trash="requestDeleteTrashItem"
+                @empty-trash="requestEmptyGalleryTrash"
+                @update-gallery-album="activeGalleryAlbum = $event"
+                @update-gallery-tag="activeGalleryTag = $event"
+                @update-gallery-color="activeGalleryColor = $event"
+                @update-gallery-scope="activeGalleryScope = $event"
                 @update-gallery-search="gallerySearch = $event"
               />
             </template>
@@ -1759,17 +2547,27 @@ onBeforeUnmount(() => {
           :live-active="busy"
           :gallery="filteredGallery"
           :gallery-total="gallery.length"
+          :gallery-favorite-count="favoriteGalleryCount"
+          :gallery-trash-count="galleryTrash.length"
+          :gallery-trash-busy="galleryTrashBusy"
+          :gallery-scope="activeGalleryScope"
           :gallery-columns="galleryColumns"
           :gallery-column-count="galleryColumnCount"
           :gallery-loading="galleryLoading"
           :gallery-importing="galleryImporting"
           :gallery-filter-date="activeGalleryDate"
           :gallery-search="gallerySearch"
+          :gallery-albums="galleryMetadataFacets.albums"
+          :gallery-tags="galleryMetadataFacets.tags"
+          :gallery-album="activeGalleryAlbum"
+          :gallery-tag="activeGalleryTag"
+          :gallery-color="activeGalleryColor"
           :gallery-selection-mode="gallerySelectionMode"
           :gallery-selected-paths="selectedGalleryPaths"
           :gallery-selected-count="selectedGalleryCount"
           :gallery-exporting="galleryExporting"
           :gallery-deleting="galleryDeleting"
+          :gallery-favorite-updating-paths="galleryFavoriteUpdatingPaths"
           @preview="openPreview"
           @context-menu="showImageMenu"
           @load-older-conversations="loadOlderConversations"
@@ -1790,6 +2588,16 @@ onBeforeUnmount(() => {
           @export-selected="exportGalleryImages('selected')"
           @clear-all="clearAllGalleryImages"
           @delete-selected="deleteSelectedGalleryImages"
+          @toggle-favorite="toggleGalleryFavorite"
+          @view-prompt="openImagePrompt"
+          @organize-selected="openGalleryOrganizeModal"
+          @restore-trash="restoreGalleryTrashItem"
+          @delete-trash="requestDeleteTrashItem"
+          @empty-trash="requestEmptyGalleryTrash"
+          @update-gallery-album="activeGalleryAlbum = $event"
+          @update-gallery-tag="activeGalleryTag = $event"
+          @update-gallery-color="activeGalleryColor = $event"
+          @update-gallery-scope="activeGalleryScope = $event"
           @update-gallery-search="gallerySearch = $event"
         />
         <InspirationSquare
@@ -1798,6 +2606,7 @@ onBeforeUnmount(() => {
           :column-count="galleryColumnCount"
           @use-prompt="useInspirationPrompt"
           @use-reference="useInspirationReference"
+          @view-prompt="openImagePrompt"
           @preview="openPreview"
         />
       </main>
@@ -1821,11 +2630,16 @@ onBeforeUnmount(() => {
       :preview="preview"
       :current-item="currentPreview"
       :ocr-busy="ocr.busy.value"
+      :favorite-updating="
+        galleryFavoriteUpdatingPaths.includes(currentPreview.filePath)
+      "
       @close="closePreview"
       @previous="movePreview(-1)"
       @next="movePreview(1)"
       @recognize="recognizePreview"
       @edit="editor.openEditor(currentPreview)"
+      @favorite="toggleGalleryFavorite"
+      @prompt="openImagePrompt"
       @context-menu="showImageMenu"
     />
     <ImageEditorModal
@@ -1850,6 +2664,8 @@ onBeforeUnmount(() => {
       @edit="editContextImage"
       @rename="renameContextImage"
       @show-folder="showContextImageInFolder"
+      @favorite="toggleContextFavorite"
+      @prompt="viewContextPrompt"
       @delete="deleteContextImage"
     />
     <ConfirmModal
@@ -1858,16 +2674,31 @@ onBeforeUnmount(() => {
       :message="deleteConfirmation?.message || ''"
       :detail="deleteConfirmation?.detail || ''"
       :eyebrow="
-        deleteConfirmation?.mode === 'conversation'
-          ? '创作记录管理'
-          : '本地作品管理'
+        deleteConfirmation?.mode === 'local-data'
+          ? '隐私与数据'
+          : deleteConfirmation?.mode === 'conversation'
+            ? '创作记录管理'
+            : deleteConfirmation?.mode?.startsWith('trash')
+              ? '回收站管理'
+              : '本地作品管理'
       "
       :confirm-label="
-        deleteConfirmation?.mode === 'conversation'
-          ? '删除记录'
-          : deleteConfirmation?.mode === 'all'
-            ? '清空全部'
-            : '永久删除'
+        deleteConfirmation?.mode === 'local-data'
+          ? '确认清除'
+          : deleteConfirmation?.mode === 'conversation'
+            ? '删除记录'
+            : deleteConfirmation?.mode === 'trash-all'
+              ? '清空回收站'
+              : deleteConfirmation?.mode === 'trash-single'
+                ? '彻底删除'
+                : deleteConfirmation?.mode === 'all'
+                  ? '清空全部'
+                  : '移入回收站'
+      "
+      :busy-label="
+        deleteConfirmation?.mode === 'local-data'
+          ? '正在清除...'
+          : '正在删除...'
       "
       :busy="deleteConfirmationBusy"
       @close="deleteConfirmation = null"
@@ -1879,6 +2710,15 @@ onBeforeUnmount(() => {
       @close="renameModal = null"
       @save="saveRenameImage"
     />
+    <GalleryOrganizeModal
+      :open="Boolean(galleryOrganizeModal)"
+      :count="galleryOrganizeModal?.count || 0"
+      :albums="galleryOrganizeModal?.albums || []"
+      :tags="galleryOrganizeModal?.tags || []"
+      :busy="galleryOrganizing"
+      @close="galleryOrganizeModal = null"
+      @save="organizeSelectedGallery"
+    />
     <OcrDrawer
       :open="ocr.open.value"
       :busy="ocr.busy.value"
@@ -1889,6 +2729,26 @@ onBeforeUnmount(() => {
       @close="ocr.close"
       @copy="ocr.copyText"
     />
+    <PromptDetailsDrawer
+      :open="Boolean(promptDetailsDrawer)"
+      :loading="promptDetailsDrawer?.loading === true"
+      :saving="promptMetadataSaving"
+      :details="promptDetailsDrawer?.details || null"
+      :error="promptDetailsDrawer?.error || ''"
+      @close="closePromptDetails"
+      @copy="copyImagePrompt"
+      @use="useImagePrompt"
+      @save="saveImageMetadata"
+      @compare="openImageVersionCompare"
+    />
+    <ImageCompareModal
+      :open="Boolean(imageCompare)"
+      :versions="imageCompare?.versions || []"
+      :current-path="imageCompare?.currentPath || ''"
+      :restoring="imageVersionRestoring"
+      @close="imageCompare = null"
+      @restore="restoreImageVersion"
+    />
     <SettingsModal
       :open="settingsOpen"
       :endpoint="settingsEndpoint"
@@ -1896,8 +2756,15 @@ onBeforeUnmount(() => {
       :storage-path="galleryDirectory"
       :default-storage-path="defaultGalleryDirectory"
       :saving="settingsSaving"
+      :clearing="localDataClearing"
+      :backup-busy="backupBusy"
+      :shortcuts="shortcutBindings"
+      :is-mac="isMacPlatform"
       @close="settingsOpen = false"
       @save="saveSettings"
+      @clear-data="requestClearLocalData"
+      @create-backup="createLocalBackup"
+      @restore-backup="restoreLocalBackup"
     />
     <AboutModal
       :open="aboutOpen"
@@ -1910,6 +2777,16 @@ onBeforeUnmount(() => {
       :open="onboardingOpen"
       @close="finishOnboarding"
       @finish="finishOnboarding"
+    />
+    <GenerationQueuePanel
+      v-if="view === 'create'"
+      :tasks="generationQueue"
+      :paused="queuePaused"
+      :active-task-id="activeQueueTaskId"
+      @toggle-pause="form.toggleQueuePause"
+      @retry="form.retryGenerationTask"
+      @remove="form.removeGenerationTask"
+      @clear-finished="form.clearFinishedGenerationTasks"
     />
     <ToastMessage
       v-if="toast && toast.view === view"

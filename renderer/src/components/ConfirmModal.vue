@@ -9,6 +9,7 @@ defineProps({
   detail: { type: String, default: '' },
   eyebrow: { type: String, default: '本地作品管理' },
   confirmLabel: { type: String, default: '确认' },
+  busyLabel: { type: String, default: '正在删除...' },
   busy: Boolean,
 });
 
@@ -65,7 +66,7 @@ defineEmits(['close', 'confirm']);
             @click="$emit('confirm')"
           >
             <Trash2 aria-hidden="true" />
-            <span>{{ busy ? '正在删除...' : confirmLabel }}</span>
+            <span>{{ busy ? busyLabel : confirmLabel }}</span>
           </button>
         </footer>
       </section>

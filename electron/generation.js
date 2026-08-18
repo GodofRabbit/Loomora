@@ -514,6 +514,26 @@ function registerGenerationHandler() {
       return { ok: false, error: '已有图片正在生成，请稍候' };
     }
 
+    const endpoint = String(payload?.endpoint || '').trim();
+    const apiKey = String(payload?.apiKey || '').trim();
+    if (!endpoint || !apiKey) {
+      const error =
+        !endpoint && !apiKey
+          ? '请先填写接口地址和 API Key'
+          : !endpoint
+            ? '请先填写接口地址'
+            : '请先填写 API Key';
+      report(event, {
+        phase: 'done',
+        ok: false,
+        total: 0,
+        completed: 0,
+        failed: 0,
+        message: error,
+      });
+      return { ok: false, error, failedCount: 0 };
+    }
+
     const controller = new AbortController();
     activeGeneration = { controller };
     const total = Math.min(

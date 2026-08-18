@@ -10,7 +10,39 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { pathToFileURL } = require('url');
+const {
+  clearFavoriteData,
+  favoriteState,
+  moveFavorite,
+  pruneMissingFavorites,
+  removeFavorites,
+  setFavorite,
+} = require('./galleryFavorites');
+const {
+  clearImageMetadataData,
+  imageMetadataFacets,
+  imageMetadataState,
+  inheritImageMetadata,
+  moveImageMetadata,
+  matchingMetadataPaths,
+  metadataVersions,
+  pruneMissingImageMetadata,
+  removeImageMetadata,
+  setConversationImageMetadata,
+  setImageHashes,
+  updateImageMetadata,
+} = require('./galleryMetadata');
+const {
+  clearTrashData,
+  deleteTrashItems,
+  emptyTrash,
+  isTrashImage,
+  listTrash,
+  moveImageToTrash,
+  restoreTrashItem,
+} = require('./galleryTrash');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const IMAGE_PATTERN = /\.(png|jpe?g|webp)$/i;
@@ -27,6 +59,7 @@ const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const JPEG_EXTENSIONS = new Set(['.jpg', '.jpeg']);
 const GALLERY_SCHEME = 'loomora-gallery';
 const STORAGE_SETTINGS_FILE = 'storage-settings.json';
+const GALLERY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 let configuredGalleryRoot;
 let knownGalleryRoots = [];
 let storageSettingsLoaded = false;
@@ -180,6 +213,14 @@ function isGalleryImage(filePath) {
   );
 }
 
+function isManagedImage(filePath) {
+  const target = path.resolve(filePath || '');
+  return (
+    IMAGE_PATTERN.test(target) &&
+    (isGalleryImage(target) || isTrashImage(target))
+  );
+}
+
 function sameFilePath(left, right) {
   return comparableFilePath(left) === comparableFilePath(right);
 }
@@ -301,13 +342,37 @@ function imageDimensions(filePath, fileSize) {
 
 function galleryItem(filePath) {
   const stat = fs.statSync(filePath);
+  const metadata = imageMetadataState(filePath);
   return {
     name: path.basename(filePath),
     date: path.basename(path.dirname(filePath)),
     path: filePath,
     data: galleryImageUrl(filePath),
     createdAt: stat.mtimeMs,
+    hasPrompt: metadata.hasPrompt,
+    title: metadata.title,
+    note: metadata.note,
+    tags: metadata.tags,
+    album: metadata.album,
+    colorLabel: metadata.colorLabel,
+    version: metadata.version,
+    hasVersions: Boolean(metadata.parentPath || metadata.rootPath),
+    ...favoriteState(filePath),
     ...imageDimensions(filePath, stat.size),
+  };
+}
+
+function trashGalleryItem(record) {
+  const filePath = path.resolve(record.trashPath);
+  const item = galleryItem(filePath);
+  return {
+    ...item,
+    name: record.name || path.basename(record.originalPath),
+    date: dateFromTime(record.deletedAt),
+    originalDate: path.basename(path.dirname(record.originalPath)),
+    trashId: record.id,
+    originalPath: record.originalPath,
+    deletedAt: Number(record.deletedAt) || 0,
   };
 }
 
@@ -338,7 +403,7 @@ function registerGalleryProtocol() {
     try {
       const requestUrl = new URL(request.url);
       const target = path.resolve(requestUrl.searchParams.get('path') || '');
-      if (!isGalleryImage(target) || !fs.existsSync(target)) {
+      if (!isManagedImage(target) || !fs.existsSync(target)) {
         return new Response('图片不存在', { status: 404 });
       }
       return net.fetch(pathToFileURL(target).toString());
@@ -532,6 +597,7 @@ function saveConversationTurn(turn) {
   else turns.push(sanitized);
   turns.sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
   writeConversationFile(filePath, turns);
+  setConversationImageMetadata(sanitized);
   return { saved: true, path: filePath, turn: sanitized };
 }
 
@@ -549,6 +615,7 @@ function hydrateConversationTurn(turn) {
     ...sanitized,
     imagePaths,
     images,
+    imageFavorites: imagePaths.map((filePath) => favoriteState(filePath)),
     liveImage: '',
   };
 }
@@ -727,6 +794,7 @@ function deleteGalleryFiles(filePaths) {
   }
 
   const deletedPaths = [];
+  const trashRecords = [];
   const missingPaths = [];
   for (const target of uniqueTargets.values()) {
     if (!fs.existsSync(target)) {
@@ -734,7 +802,11 @@ function deleteGalleryFiles(filePaths) {
       continue;
     }
     try {
-      fs.rmSync(target);
+      const record = moveImageToTrash(target);
+      moveFavorite(target, record.trashPath);
+      moveImageMetadata(target, record.trashPath);
+      updateStoredConversationImagePath(target, record.trashPath);
+      trashRecords.push(record);
       deletedPaths.push(target);
     } catch (error) {
       failed.push({
@@ -745,9 +817,11 @@ function deleteGalleryFiles(filePaths) {
   }
 
   const removedPaths = [...deletedPaths, ...missingPaths];
+  removeFavorites(missingPaths);
+  removeImageMetadata(missingPaths);
   let historySyncError = '';
   try {
-    removeStoredConversationImagePaths(removedPaths);
+    removeStoredConversationImagePaths(missingPaths);
   } catch (error) {
     historySyncError = formatUserError(
       error,
@@ -761,6 +835,7 @@ function deleteGalleryFiles(filePaths) {
     deletedPaths,
     missingPaths,
     removedPaths,
+    trashRecords,
     failed,
     historySyncError,
   };
@@ -783,7 +858,10 @@ function formatUserError(value, fallback = '操作失败，请稍后重试') {
 
 function listGallery() {
   const files = [];
-  for (const root of new Set(galleryRoots())) {
+  const roots = Array.from(new Set(galleryRoots()));
+  pruneMissingFavorites(roots);
+  pruneMissingImageMetadata(roots);
+  for (const root of roots) {
     if (!fs.existsSync(root)) continue;
     const dateDirectories = fs.readdirSync(root, { withFileTypes: true });
     for (const dateDirectory of dateDirectories) {
@@ -801,6 +879,98 @@ function listGallery() {
       b.createdAt - a.createdAt ||
       b.name.localeCompare(a.name),
   );
+}
+
+function clearGalleryData() {
+  const roots = Array.from(new Set(galleryRoots()));
+  const result = {
+    deletedImages: 0,
+    deletedConversationFiles: 0,
+    deletedReferenceDirectories: 0,
+    failed: [],
+  };
+
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    let dateDirectories;
+    try {
+      dateDirectories = fs.readdirSync(root, { withFileTypes: true });
+    } catch (error) {
+      result.failed.push({ path: root, error: formatUserError(error) });
+      continue;
+    }
+
+    for (const entry of dateDirectories) {
+      if (!entry.isDirectory() || !GALLERY_DATE_PATTERN.test(entry.name)) {
+        continue;
+      }
+      const directory = path.join(root, entry.name);
+      try {
+        for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
+          const target = path.join(directory, item.name);
+          if (item.isFile() && IMAGE_PATTERN.test(item.name)) {
+            fs.rmSync(target, { force: true });
+            result.deletedImages += 1;
+          } else if (item.isFile() && item.name === CONVERSATION_FILE) {
+            fs.rmSync(target, { force: true });
+            result.deletedConversationFiles += 1;
+          } else if (
+            item.isDirectory() &&
+            item.name === CONVERSATION_REFERENCE_DIRECTORY
+          ) {
+            fs.rmSync(target, { recursive: true, force: true });
+            result.deletedReferenceDirectories += 1;
+          }
+        }
+        if (!fs.readdirSync(directory).length) {
+          fs.rmSync(directory, { recursive: true, force: true });
+        }
+      } catch (error) {
+        result.failed.push({ path: directory, error: formatUserError(error) });
+      }
+    }
+  }
+
+  try {
+    fs.rmSync(storageSettingsPath(), { force: true });
+  } catch (error) {
+    result.failed.push({
+      path: storageSettingsPath(),
+      error: formatUserError(error),
+    });
+  }
+
+  try {
+    clearFavoriteData();
+  } catch (error) {
+    result.failed.push({
+      path: 'gallery-favorites.json',
+      error: formatUserError(error),
+    });
+  }
+
+  try {
+    clearImageMetadataData();
+  } catch (error) {
+    result.failed.push({
+      path: 'gallery-image-metadata.json',
+      error: formatUserError(error),
+    });
+  }
+
+  try {
+    clearTrashData();
+  } catch (error) {
+    result.failed.push({
+      path: 'GalleryTrash',
+      error: formatUserError(error),
+    });
+  }
+
+  configuredGalleryRoot = undefined;
+  knownGalleryRoots = [];
+  storageSettingsLoaded = true;
+  return { ...result, storage: galleryStorageSettings() };
 }
 
 function availableImportPath(directory, fileName) {
@@ -882,10 +1052,60 @@ function normalizeRenameTarget(sourcePath, requestedName) {
   };
 }
 
+function imageFileHash(filePath) {
+  const hash = crypto.createHash('sha256');
+  const descriptor = fs.openSync(filePath, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return hash.digest('hex');
+}
+
+function galleryImageFiles() {
+  const files = [];
+  for (const root of new Set(galleryRoots())) {
+    if (!fs.existsSync(root)) continue;
+    for (const directory of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!directory.isDirectory()) continue;
+      const dateDirectory = path.join(root, directory.name);
+      for (const entry of fs.readdirSync(dateDirectory, {
+        withFileTypes: true,
+      })) {
+        if (entry.isFile() && IMAGE_PATTERN.test(entry.name)) {
+          files.push(path.join(dateDirectory, entry.name));
+        }
+      }
+    }
+  }
+  return files;
+}
+
+function galleryHashIndex() {
+  const index = new Map();
+  const uncached = [];
+  for (const filePath of galleryImageFiles()) {
+    const cached = imageMetadataState(filePath).hash;
+    const hash = cached || imageFileHash(filePath);
+    if (!cached) uncached.push({ path: filePath, hash });
+    if (!index.has(hash)) index.set(hash, filePath);
+  }
+  setImageHashes(uncached);
+  return index;
+}
+
 function importGalleryFiles(filePaths) {
   const directory = galleryDir();
   const items = [];
   const failed = [];
+  const duplicates = [];
+  const hashIndex = galleryHashIndex();
   for (const inputPath of filePaths) {
     const sourcePath = path.resolve(String(inputPath || ''));
     try {
@@ -898,6 +1118,15 @@ function importGalleryFiles(filePaths) {
       if (nativeImage.createFromPath(sourcePath).isEmpty()) {
         throw new Error('图片文件无效或已损坏');
       }
+      const hash = imageFileHash(sourcePath);
+      const duplicatePath = hashIndex.get(hash);
+      if (duplicatePath) {
+        duplicates.push({
+          name: path.basename(sourcePath),
+          existingPath: duplicatePath,
+        });
+        continue;
+      }
       const targetPath = availableImportPath(
         directory,
         path.basename(sourcePath),
@@ -905,6 +1134,8 @@ function importGalleryFiles(filePaths) {
       fs.copyFileSync(sourcePath, targetPath);
       const importedAt = new Date();
       fs.utimesSync(targetPath, importedAt, importedAt);
+      setImageHashes([{ path: targetPath, hash }]);
+      hashIndex.set(hash, targetPath);
       items.push(galleryItem(targetPath));
     } catch (error) {
       failed.push({
@@ -913,7 +1144,7 @@ function importGalleryFiles(filePaths) {
       });
     }
   }
-  return { canceled: false, items, failed };
+  return { canceled: false, items, failed, duplicates };
 }
 
 function requestHeaders(key) {
@@ -934,6 +1165,7 @@ async function saveGeneratedImages(items, { key, outputFormat = 'png' }) {
   const images = [];
   const localPaths = [];
   const total = items.length;
+  const hashes = [];
 
   for (let index = 0; index < total; index++) {
     const item = items[index] || {};
@@ -974,9 +1206,15 @@ async function saveGeneratedImages(items, { key, outputFormat = 'png' }) {
       `loomora-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${index + 1}.${extension}`,
     );
     fs.writeFileSync(filePath, buffer);
+    hashes.push({
+      path: filePath,
+      hash: crypto.createHash('sha256').update(buffer).digest('hex'),
+    });
     localPaths.push(filePath);
     images.push(`data:${mime};base64,${buffer.toString('base64')}`);
   }
+
+  setImageHashes(hashes);
 
   return { images, localPaths, folder: directory };
 }
@@ -1014,6 +1252,41 @@ function registerGalleryHandlers() {
 
   ipcMain.handle('list-gallery', async () => listGallery());
 
+  ipcMain.handle('list-gallery-trash', () => listTrash().map(trashGalleryItem));
+
+  ipcMain.handle('restore-gallery-trash-item', (_event, id) => {
+    const restored = restoreTrashItem(String(id || ''));
+    moveFavorite(restored.trashPath, restored.restoredPath);
+    moveImageMetadata(restored.trashPath, restored.restoredPath);
+    updateStoredConversationImagePath(
+      restored.trashPath,
+      restored.restoredPath,
+    );
+    return { restored: true, item: galleryItem(restored.restoredPath) };
+  });
+
+  ipcMain.handle('delete-gallery-trash-items', (_event, ids) => {
+    const result = deleteTrashItems(ids);
+    const removedPaths = result.removed.map((item) => item.trashPath);
+    removeFavorites(removedPaths);
+    removeImageMetadata(removedPaths);
+    removeStoredConversationImagePaths(removedPaths);
+    return {
+      deleted: result.removed.length,
+      deletedIds: result.removed.map((item) => item.id),
+      failed: result.failed,
+    };
+  });
+
+  ipcMain.handle('empty-gallery-trash', () => {
+    const result = emptyTrash();
+    const removedPaths = result.removed.map((item) => item.trashPath);
+    removeFavorites(removedPaths);
+    removeImageMetadata(removedPaths);
+    removeStoredConversationImagePaths(removedPaths);
+    return { deleted: result.removed.length, failed: result.failed };
+  });
+
   ipcMain.handle('read-gallery-image', async (_event, filePath) =>
     galleryImageData(filePath),
   );
@@ -1043,7 +1316,7 @@ function registerGalleryHandlers() {
         filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
       });
       if (result.canceled || !result.filePaths.length) {
-        return { canceled: true, items: [], failed: [] };
+        return { canceled: true, items: [], failed: [], duplicates: [] };
       }
       selectedPaths = result.filePaths;
     }
@@ -1212,6 +1485,7 @@ function registerGalleryHandlers() {
       ? result.filePath
       : `${result.filePath}.png`;
     fs.writeFileSync(targetPath, buffer);
+    inheritImageMetadata(sourcePath, targetPath);
 
     // Only persistent gallery locations should appear in the in-memory gallery.
     const parentRoot = path.resolve(path.dirname(path.dirname(targetPath)));
@@ -1228,6 +1502,92 @@ function registerGalleryHandlers() {
   ipcMain.handle('delete-gallery-images', async (_event, filePaths) =>
     deleteGalleryFiles(filePaths),
   );
+
+  ipcMain.handle('set-gallery-favorite', async (_event, payload) => {
+    const target = path.resolve(payload?.filePath || '');
+    if (!isGalleryImage(target) || !fs.existsSync(target)) {
+      throw new Error('作品图片不存在或路径无效');
+    }
+    setFavorite(target, payload?.favorite === true);
+    return galleryItem(target);
+  });
+
+  ipcMain.handle('get-gallery-favorite', async (_event, filePath) => {
+    const target = path.resolve(filePath || '');
+    if (!isGalleryImage(target) || !fs.existsSync(target)) {
+      return { favorite: false, favoritedAt: null };
+    }
+    return favoriteState(target);
+  });
+
+  ipcMain.handle('get-gallery-image-metadata', async (_event, filePath) => {
+    const target = path.resolve(filePath || '');
+    if (!isGalleryImage(target) || !fs.existsSync(target)) {
+      throw new Error('作品图片不存在或路径无效');
+    }
+    let metadata = imageMetadataState(target);
+    if (!metadata.hasPrompt) {
+      const turn = findConversationByImage(target);
+      if (turn?.prompt) {
+        setConversationImageMetadata(turn);
+        metadata = imageMetadataState(target);
+      }
+    }
+    const stat = fs.statSync(target);
+    const versions = metadataVersions(target)
+      .filter((item) => fs.existsSync(item.path))
+      .map((item) => ({
+        path: item.path,
+        name: path.basename(item.path),
+        version: item.version,
+        source: item.source,
+        createdAt: item.createdAt,
+        image: galleryImageUrl(item.path),
+      }));
+    return {
+      ...metadata,
+      path: target,
+      name: path.basename(target),
+      fileSize: stat.size,
+      modifiedAt: stat.mtimeMs,
+      ...imageDimensions(target, stat.size),
+      versions,
+    };
+  });
+
+  ipcMain.handle('update-gallery-image-metadata', async (_event, payload) => {
+    const target = path.resolve(payload?.filePath || '');
+    if (!isGalleryImage(target) || !fs.existsSync(target)) {
+      throw new Error('作品图片不存在或路径无效');
+    }
+    const metadata = updateImageMetadata(target, payload?.metadata || {});
+    return { ...galleryItem(target), metadata };
+  });
+
+  ipcMain.handle('get-gallery-metadata-facets', () => imageMetadataFacets());
+
+  ipcMain.handle('search-gallery-metadata', (_event, query) =>
+    matchingMetadataPaths(query),
+  );
+
+  ipcMain.handle('restore-gallery-image-version', async (_event, filePath) => {
+    const source = path.resolve(filePath || '');
+    if (!isGalleryImage(source) || !fs.existsSync(source)) {
+      throw new Error('要恢复的图片版本不存在');
+    }
+    const extension = path.extname(source).toLowerCase();
+    const stem = path.basename(source, extension);
+    const directory = galleryDir();
+    const target = availableImportPath(
+      directory,
+      `${stem}-restored-${Date.now()}${extension}`,
+    );
+    fs.copyFileSync(source, target);
+    const restoredAt = new Date();
+    fs.utimesSync(target, restoredAt, restoredAt);
+    inheritImageMetadata(source, target);
+    return { restored: true, item: galleryItem(target) };
+  });
 
   ipcMain.handle('rename-image', async (_event, payload) => {
     try {
@@ -1254,6 +1614,8 @@ function registerGalleryHandlers() {
         return { renamed: false, error: '同名文件已存在，请换一个名字' };
       }
       fs.renameSync(sourcePath, targetPath);
+      moveFavorite(sourcePath, targetPath);
+      moveImageMetadata(sourcePath, targetPath);
       updateStoredConversationImagePath(sourcePath, targetPath);
       return {
         renamed: true,
@@ -1290,9 +1652,14 @@ function registerGalleryHandlers() {
 }
 
 module.exports = {
+  clearGalleryData,
+  collectConversationTurns,
+  currentGalleryRoot,
   deleteGalleryFiles,
+  listGallery,
   registerGalleryHandlers,
   registerGalleryProtocol,
   registerGalleryScheme,
   saveGeneratedImages,
+  saveConversationTurn,
 };

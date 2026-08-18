@@ -13,13 +13,18 @@ import {
   CircleX,
   Copy,
   FolderDown,
+  FolderHeart,
   FolderOpen,
+  Heart,
   History,
   ImagePlus,
   ListChecks,
+  MessageSquareText,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Search,
+  Tags,
   Trash2,
   Upload,
   X,
@@ -48,17 +53,27 @@ const props = defineProps({
   liveActive: Boolean,
   gallery: { type: Array, required: true },
   galleryTotal: { type: Number, default: 0 },
+  galleryFavoriteCount: { type: Number, default: 0 },
+  galleryTrashCount: { type: Number, default: 0 },
+  galleryTrashBusy: Boolean,
+  galleryScope: { type: String, default: 'all' },
   galleryColumns: { type: Array, required: true },
   galleryColumnCount: { type: Number, required: true },
   galleryLoading: Boolean,
   galleryImporting: Boolean,
   galleryFilterDate: { type: String, default: 'all' },
   gallerySearch: { type: String, default: '' },
+  galleryAlbums: { type: Array, default: () => [] },
+  galleryTags: { type: Array, default: () => [] },
+  galleryAlbum: { type: String, default: 'all' },
+  galleryTag: { type: String, default: 'all' },
+  galleryColor: { type: String, default: 'all' },
   gallerySelectionMode: Boolean,
   gallerySelectedPaths: { type: Array, default: () => [] },
   gallerySelectedCount: { type: Number, default: 0 },
   galleryExporting: Boolean,
   galleryDeleting: Boolean,
+  galleryFavoriteUpdatingPaths: { type: Array, default: () => [] },
 });
 const emit = defineEmits([
   'preview',
@@ -71,7 +86,17 @@ const emit = defineEmits([
   'export-selected',
   'clear-all',
   'delete-selected',
+  'toggle-favorite',
+  'view-prompt',
+  'update-gallery-scope',
   'update-gallery-search',
+  'update-gallery-album',
+  'update-gallery-tag',
+  'update-gallery-color',
+  'organize-selected',
+  'restore-trash',
+  'delete-trash',
+  'empty-trash',
   'load-older-conversations',
   'load-newer-conversations',
   'load-latest-conversations',
@@ -172,29 +197,45 @@ const galleryHeadText = computed(() => {
       ? `已勾选 ${props.gallerySelectedCount} 张，可导出为文件夹`
       : '勾选图片后可批量导出';
   }
+  if (props.galleryScope === 'favorites') {
+    return `${props.gallery.length} 张收藏作品，仍按最新日期排列`;
+  }
+  if (props.galleryScope === 'trash') {
+    return props.gallery.length
+      ? `${props.gallery.length} 张已删除作品，可恢复到原目录`
+      : '回收站中的图片仅保存在本机';
+  }
   if (props.galleryFilterDate === 'all') {
     return `${props.gallery.length} 张本地作品，可点击导出全部或勾选后批量导出`;
   }
   return `${props.gallery.length} 张本地作品，当前日期可直接导出为文件夹`;
 });
 const galleryExportCurrentLabel = computed(() =>
-  props.galleryFilterDate === 'all' ? '导出全部' : '导出当前',
+  props.galleryScope === 'favorites'
+    ? '导出收藏'
+    : props.galleryFilterDate === 'all'
+      ? '导出全部'
+      : '导出当前',
 );
 const galleryExportCurrentTitle = computed(() =>
-  props.galleryFilterDate === 'all'
-    ? '导出全部作品到文件夹'
-    : '导出当前日期到文件夹',
+  props.galleryScope === 'favorites'
+    ? '导出当前筛选出的收藏作品'
+    : props.galleryFilterDate === 'all'
+      ? '导出全部作品到文件夹'
+      : '导出当前日期到文件夹',
 );
 function acceptsFiles(event) {
   return Array.from(event.dataTransfer?.types || []).includes('Files');
 }
 
 function onDragEnter(event) {
-  if (acceptsFiles(event)) dragActive.value = true;
+  if (props.galleryScope !== 'trash' && acceptsFiles(event)) {
+    dragActive.value = true;
+  }
 }
 
 function onDragOver(event) {
-  if (!acceptsFiles(event)) return;
+  if (props.galleryScope === 'trash' || !acceptsFiles(event)) return;
   event.dataTransfer.dropEffect = 'copy';
   dragActive.value = true;
 }
@@ -211,6 +252,7 @@ function onDragLeave(event) {
 
 function onDrop(event) {
   dragActive.value = false;
+  if (props.galleryScope === 'trash') return;
   const files = Array.from(event.dataTransfer?.files || []);
   if (files.length) emit('import-drop', files);
 }
@@ -298,6 +340,10 @@ function syncGalleryMeasurements() {
 
 function isSelected(filePath) {
   return props.gallerySelectedPaths.includes(filePath);
+}
+
+function favoriteUpdating(filePath) {
+  return props.galleryFavoriteUpdatingPaths.includes(filePath);
 }
 
 function turnTime(turn) {
@@ -956,89 +1002,184 @@ onBeforeUnmount(() => {
           <span class="section-kicker">Works Gallery</span>
           <h1>作品库</h1>
         </div>
-        <div class="gallery-search">
-          <Search aria-hidden="true" />
-          <input
-            :value="gallerySearch"
-            type="search"
-            placeholder="搜索作品名称或日期"
-            aria-label="搜索作品库"
-            @input="emit('update-gallery-search', $event.target.value)"
-          />
+        <div class="gallery-search-tools">
+          <div class="gallery-scope-toggle" aria-label="作品范围">
+            <button
+              type="button"
+              :class="{ active: galleryScope === 'all' }"
+              :aria-pressed="galleryScope === 'all'"
+              @click="emit('update-gallery-scope', 'all')"
+            >
+              全部
+            </button>
+            <button
+              type="button"
+              :class="{ active: galleryScope === 'favorites' }"
+              :aria-pressed="galleryScope === 'favorites'"
+              @click="emit('update-gallery-scope', 'favorites')"
+            >
+              <Heart aria-hidden="true" />收藏
+              <b>{{ galleryFavoriteCount }}</b>
+            </button>
+            <button
+              type="button"
+              :class="{ active: galleryScope === 'trash' }"
+              :aria-pressed="galleryScope === 'trash'"
+              @click="emit('update-gallery-scope', 'trash')"
+            >
+              <Trash2 aria-hidden="true" />回收站
+              <b>{{ galleryTrashCount }}</b>
+            </button>
+          </div>
+          <div class="gallery-search">
+            <Search aria-hidden="true" />
+            <input
+              :value="gallerySearch"
+              type="search"
+              placeholder="搜索名称、提示词、标签或备注"
+              aria-label="搜索作品库"
+              @input="emit('update-gallery-search', $event.target.value)"
+            />
+          </div>
         </div>
         <div class="gallery-head-actions">
+          <template v-if="galleryScope !== 'trash'">
+            <button
+              type="button"
+              class="gallery-import-button"
+              :disabled="
+                galleryLoading ||
+                galleryImporting ||
+                galleryExporting ||
+                galleryDeleting
+              "
+              title="从电脑导入图片"
+              @click="emit('import')"
+            >
+              <ImagePlus aria-hidden="true" />
+              <span>{{ galleryImporting ? '导入中...' : '导入' }}</span>
+            </button>
+            <button
+              type="button"
+              class="gallery-select-button"
+              :class="{ active: gallerySelectionMode }"
+              :disabled="
+                galleryLoading ||
+                galleryImporting ||
+                galleryExporting ||
+                galleryDeleting ||
+                !gallery.length
+              "
+              :title="gallerySelectionMode ? '退出多选' : '选择多张作品'"
+              @click="emit('toggle-selection-mode')"
+            >
+              <ListChecks aria-hidden="true" />
+              <span>{{ gallerySelectionMode ? '退出多选' : '多选' }}</span>
+            </button>
+            <button
+              type="button"
+              class="gallery-export-button"
+              :disabled="
+                galleryLoading ||
+                galleryImporting ||
+                galleryExporting ||
+                galleryDeleting ||
+                !gallery.length
+              "
+              :title="galleryExportCurrentTitle"
+              @click="emit('export-current')"
+            >
+              <FolderDown aria-hidden="true" />
+              <span>{{ galleryExportCurrentLabel }}</span>
+            </button>
+            <button
+              type="button"
+              class="gallery-clear-button"
+              :disabled="
+                galleryLoading ||
+                galleryImporting ||
+                galleryExporting ||
+                galleryDeleting ||
+                galleryTotal === 0 ||
+                galleryScope === 'favorites'
+              "
+              title="永久删除作品库中的全部图片"
+              @click="emit('clear-all')"
+            >
+              <Trash2 aria-hidden="true" />
+              <span>{{ galleryDeleting ? '清空中...' : '清空全部' }}</span>
+            </button>
+          </template>
           <button
-            type="button"
-            class="gallery-import-button"
-            :disabled="
-              galleryLoading ||
-              galleryImporting ||
-              galleryExporting ||
-              galleryDeleting
-            "
-            title="从电脑导入图片"
-            @click="emit('import')"
-          >
-            <ImagePlus aria-hidden="true" />
-            <span>{{ galleryImporting ? '导入中...' : '导入' }}</span>
-          </button>
-          <button
-            type="button"
-            class="gallery-select-button"
-            :class="{ active: gallerySelectionMode }"
-            :disabled="
-              galleryLoading ||
-              galleryImporting ||
-              galleryExporting ||
-              galleryDeleting ||
-              !gallery.length
-            "
-            :title="gallerySelectionMode ? '退出多选' : '选择多张作品'"
-            @click="emit('toggle-selection-mode')"
-          >
-            <ListChecks aria-hidden="true" />
-            <span>{{ gallerySelectionMode ? '退出多选' : '多选' }}</span>
-          </button>
-          <button
-            type="button"
-            class="gallery-export-button"
-            :disabled="
-              galleryLoading ||
-              galleryImporting ||
-              galleryExporting ||
-              galleryDeleting ||
-              !gallery.length
-            "
-            :title="galleryExportCurrentTitle"
-            @click="emit('export-current')"
-          >
-            <FolderDown aria-hidden="true" />
-            <span>{{ galleryExportCurrentLabel }}</span>
-          </button>
-          <button
+            v-else
             type="button"
             class="gallery-clear-button"
-            :disabled="
-              galleryLoading ||
-              galleryImporting ||
-              galleryExporting ||
-              galleryDeleting ||
-              galleryTotal === 0
-            "
-            title="永久删除作品库中的全部图片"
-            @click="emit('clear-all')"
+            :disabled="galleryTrashBusy || galleryTrashCount === 0"
+            title="永久删除回收站中的全部图片"
+            @click="emit('empty-trash')"
           >
             <Trash2 aria-hidden="true" />
-            <span>{{ galleryDeleting ? '清空中...' : '清空全部' }}</span>
+            <span>{{ galleryTrashBusy ? '清空中...' : '清空回收站' }}</span>
           </button>
         </div>
       </div>
       <div class="works-head-meta">
         <span>{{ galleryHeadText }}</span>
-        <span class="gallery-drop-hint">
+        <span v-if="galleryScope !== 'trash'" class="gallery-drop-hint">
           <Upload aria-hidden="true" />
           拖拽图片到当前页面即可导入
         </span>
+      </div>
+      <div
+        v-if="galleryScope !== 'trash'"
+        class="gallery-metadata-filters"
+        aria-label="作品分类筛选"
+      >
+        <label>
+          <FolderHeart aria-hidden="true" />
+          <select
+            :value="galleryAlbum"
+            aria-label="按专辑筛选"
+            @change="emit('update-gallery-album', $event.target.value)"
+          >
+            <option value="all">全部专辑</option>
+            <option v-for="album in galleryAlbums" :key="album" :value="album">
+              {{ album }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <Tags aria-hidden="true" />
+          <select
+            :value="galleryTag"
+            aria-label="按标签筛选"
+            @change="emit('update-gallery-tag', $event.target.value)"
+          >
+            <option value="all">全部标签</option>
+            <option v-for="tag in galleryTags" :key="tag" :value="tag">
+              {{ tag }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span
+            class="gallery-filter-color"
+            :class="`color-${galleryColor}`"
+            aria-hidden="true"
+          ></span>
+          <select
+            :value="galleryColor"
+            aria-label="按颜色筛选"
+            @change="emit('update-gallery-color', $event.target.value)"
+          >
+            <option value="all">全部颜色</option>
+            <option value="red">红色</option>
+            <option value="gold">金色</option>
+            <option value="green">绿色</option>
+            <option value="blue">蓝色</option>
+            <option value="purple">紫色</option>
+          </select>
+        </label>
       </div>
     </div>
     <Transition name="gallery-selection-toolbar">
@@ -1055,6 +1196,16 @@ onBeforeUnmount(() => {
           >
         </span>
         <span class="gallery-selection-divider" aria-hidden="true"></span>
+        <button
+          type="button"
+          class="gallery-selection-organize"
+          :disabled="galleryDeleting || gallerySelectedCount === 0"
+          title="为已选择的作品设置专辑、标签和颜色"
+          @click="emit('organize-selected')"
+        >
+          <Tags aria-hidden="true" />
+          <span>整理已选</span>
+        </button>
         <button
           type="button"
           class="gallery-selection-export"
@@ -1368,7 +1519,10 @@ onBeforeUnmount(() => {
       @dragleave="onDragLeave"
       @drop.prevent="onDrop"
     >
-      <div v-if="dragActive" class="library-drop-overlay">
+      <div
+        v-if="dragActive && galleryScope !== 'trash'"
+        class="library-drop-overlay"
+      >
         <Upload aria-hidden="true" />
         <b>松手即可导入图片</b>
         <small>支持 JPG、PNG、WEBP，可一次拖入多张</small>
@@ -1394,6 +1548,53 @@ onBeforeUnmount(() => {
           class="gallery-card"
           :class="{ selected: isSelected(item.path) }"
         >
+          <div
+            v-if="galleryScope === 'trash'"
+            class="gallery-card-trash-actions"
+          >
+            <button
+              type="button"
+              :disabled="galleryTrashBusy"
+              title="恢复到原作品目录"
+              aria-label="恢复图片"
+              @click.stop="emit('restore-trash', item)"
+            >
+              <RotateCcw aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="danger"
+              :disabled="galleryTrashBusy"
+              title="彻底删除"
+              aria-label="彻底删除图片"
+              @click.stop="emit('delete-trash', item)"
+            >
+              <Trash2 aria-hidden="true" />
+            </button>
+          </div>
+          <button
+            v-if="!gallerySelectionMode && galleryScope !== 'trash'"
+            type="button"
+            class="gallery-card-favorite"
+            :class="{ active: item.favorite }"
+            :disabled="favoriteUpdating(item.path)"
+            :aria-pressed="item.favorite === true"
+            :aria-label="item.favorite ? '取消收藏' : '收藏图片'"
+            :title="item.favorite ? '取消收藏' : '收藏图片'"
+            @click.stop="emit('toggle-favorite', item)"
+          >
+            <Heart aria-hidden="true" />
+          </button>
+          <button
+            v-if="!gallerySelectionMode && galleryScope !== 'trash'"
+            type="button"
+            class="gallery-card-prompt"
+            title="查看图片提示词"
+            aria-label="查看图片提示词"
+            @click.stop="emit('view-prompt', item)"
+          >
+            <MessageSquareText aria-hidden="true" />
+          </button>
           <button
             v-if="gallerySelectionMode"
             type="button"
@@ -1412,17 +1613,39 @@ onBeforeUnmount(() => {
             decoding="async"
             fetchpriority="low"
             @click="
-              gallerySelectionMode
-                ? emit('toggle-selection', item)
-                : emit('preview', { type: 'gallery', item })
+              galleryScope === 'trash'
+                ? emit('preview', { type: 'gallery', item })
+                : gallerySelectionMode
+                  ? emit('toggle-selection', item)
+                  : emit('preview', { type: 'gallery', item })
             "
-            @contextmenu="
+            @contextmenu.prevent="
+              galleryScope !== 'trash' &&
               emit('context-menu', $event, item.data, item.path, true)
             "
           />
-          <div class="gallery-card-meta">
-            <b>{{ item.name }}</b
-            ><small>{{ item.date }}</small>
+          <div
+            class="gallery-card-meta"
+            :class="item.colorLabel ? `color-${item.colorLabel}` : ''"
+          >
+            <b>{{ item.title || item.name }}</b>
+            <small>
+              <template v-if="galleryScope === 'trash'">
+                删除于 {{ item.date }}
+              </template>
+              <template v-else>
+                {{ item.date
+                }}<template v-if="item.album"> · {{ item.album }}</template>
+              </template>
+            </small>
+            <div v-if="item.tags?.length" class="gallery-card-tags">
+              <span v-for="tag in item.tags.slice(0, 3)" :key="tag">{{
+                tag
+              }}</span>
+              <span v-if="item.tags.length > 3"
+                >+{{ item.tags.length - 3 }}</span
+              >
+            </div>
           </div>
         </article>
         <div
@@ -1440,19 +1663,30 @@ onBeforeUnmount(() => {
         <span>✧</span>
         <b>
           {{
-            galleryFilterDate === 'all'
-              ? '作品库还是空的'
-              : '这个日期还没有作品'
+            galleryScope === 'favorites'
+              ? '还没有收藏作品'
+              : galleryScope === 'trash'
+                ? '回收站是空的'
+                : galleryFilterDate === 'all'
+                  ? '作品库还是空的'
+                  : '这个日期还没有作品'
           }}
         </b>
         <small>
           {{
-            galleryFilterDate === 'all'
-              ? '生成的图片会自动出现在这里'
-              : '切回“全部”可以查看其他日期的作品，也可以继续生成新的图片'
+            galleryScope === 'favorites'
+              ? '收藏的作品会集中显示在这里'
+              : galleryScope === 'trash'
+                ? '从作品库删除的图片会暂存在这里'
+                : galleryFilterDate === 'all'
+                  ? '生成的图片会自动出现在这里'
+                  : '切回“全部”可以查看其他日期的作品，也可以继续生成新的图片'
           }}
         </small>
-        <em v-if="galleryFilterDate === 'all'" class="gallery-empty-drop-hint">
+        <em
+          v-if="galleryScope === 'all' && galleryFilterDate === 'all'"
+          class="gallery-empty-drop-hint"
+        >
           可点击右侧“导入”，也可以直接把图片拖到作品库里
         </em>
       </div>

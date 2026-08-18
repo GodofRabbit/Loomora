@@ -1,0 +1,190 @@
+.generation-queue-trigger {
+  position: fixed;
+  z-index: 91;
+  right: 24px;
+  bottom: 24px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(181, 142, 255, 0.42);
+  border-radius: 8px;
+  place-items: center;
+  background: rgba(28, 20, 48, 0.94);
+  color: #dfd2f2;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.38);
+}
+.generation-queue-trigger:hover,
+.generation-queue-trigger.active {
+  border-color: rgba(203, 172, 255, 0.7);
+  background: rgba(73, 46, 112, 0.96);
+  color: #fff;
+}
+.generation-queue-trigger svg {
+  width: 19px;
+}
+.generation-queue-trigger span {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 2px solid #100d1b;
+  border-radius: 9px;
+  background: #9d6be0;
+  color: #fff;
+  font-size: 10px;
+  line-height: 14px;
+}
+.generation-queue-panel {
+  position: fixed;
+  z-index: 90;
+  right: 24px;
+  bottom: 76px;
+  display: flex;
+  width: min(380px, calc(100vw - 36px));
+  max-height: min(620px, calc(100vh - 130px));
+  border: 1px solid rgba(181, 142, 255, 0.28);
+  border-radius: 8px;
+  flex-direction: column;
+  background: rgba(14, 12, 24, 0.97);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(18px);
+}
+.generation-queue-panel header {
+  display: flex;
+  padding: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(181, 142, 255, 0.13);
+}
+.generation-queue-panel header div {
+  display: grid;
+  gap: 3px;
+}
+.generation-queue-panel header b {
+  color: #eee6f8;
+  font-size: 14px;
+}
+.generation-queue-panel header span,
+.generation-queue-item-head small {
+  color: #8f859d;
+  font-size: 11px;
+}
+.generation-queue-panel header button,
+.generation-queue-tools button,
+.generation-queue-item-actions button {
+  display: inline-flex;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(181, 142, 255, 0.22);
+  border-radius: 6px;
+  align-items: center;
+  gap: 5px;
+  background: rgba(64, 43, 93, 0.35);
+  color: #d8cae8;
+  font-size: 11px;
+}
+.generation-queue-panel button:hover:not(:disabled) {
+  border-color: rgba(198, 158, 255, 0.58);
+  background: rgba(99, 61, 145, 0.45);
+  color: #fff;
+}
+.generation-queue-panel button:disabled {
+  opacity: 0.42;
+}
+.generation-queue-panel button svg {
+  width: 14px;
+  height: 14px;
+}
+.generation-queue-panel header button {
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+  background: transparent;
+}
+.generation-queue-tools {
+  display: flex;
+  padding: 10px 14px;
+  gap: 8px;
+  border-bottom: 1px solid rgba(181, 142, 255, 0.1);
+}
+.generation-queue-list {
+  min-height: 140px;
+  padding: 8px 10px 12px;
+  overflow-y: auto;
+}
+.generation-queue-list article {
+  display: grid;
+  padding: 11px;
+  gap: 6px;
+  border-bottom: 1px solid rgba(181, 142, 255, 0.1);
+}
+.generation-queue-list article.running {
+  border-left: 2px solid #ac79ef;
+}
+.generation-queue-list article.failed {
+  border-left: 2px solid #c46b99;
+}
+.generation-queue-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.generation-queue-item-head span {
+  color: #c9b3e7;
+  font-size: 11px;
+  font-weight: 800;
+}
+.generation-queue-list p {
+  margin: 0;
+  overflow: hidden;
+  color: #d8d0e1;
+  font-size: 12px;
+  line-height: 1.55;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.generation-queue-list article > small {
+  color: #82788e;
+  font-size: 10px;
+}
+.generation-queue-list em {
+  color: #d58cac;
+  font-size: 10px;
+  font-style: normal;
+}
+.generation-queue-item-actions {
+  display: flex;
+  gap: 7px;
+}
+.generation-queue-empty {
+  display: grid;
+  min-height: 170px;
+  place-items: center;
+  place-content: center;
+  gap: 6px;
+  color: #756a82;
+}
+.generation-queue-empty svg {
+  width: 24px;
+}
+.generation-queue-empty b {
+  color: #b9adc5;
+  font-size: 12px;
+}
+.generation-queue-empty span {
+  font-size: 11px;
+}
+.generation-queue-enter-active,
+.generation-queue-leave-active {
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+.generation-queue-enter-from,
+.generation-queue-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}

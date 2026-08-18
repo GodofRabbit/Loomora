@@ -258,14 +258,9 @@ watch(
         </div>
       </label>
       <div class="generation-actions action-control">
-        <button
-          type="button"
-          class="generate"
-          :disabled="busy"
-          @click="emit('generate')"
-        >
+        <button type="button" class="generate" @click="emit('generate')">
           <WandSparkles aria-hidden="true" />
-          {{ busy ? '生成中...' : count > 1 ? '批量生成' : '流式生成' }}
+          {{ busy ? '加入队列' : count > 1 ? '批量生成' : '流式生成' }}
         </button>
         <button
           v-if="busy"

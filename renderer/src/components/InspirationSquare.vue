@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { Search } from 'lucide-vue-next';
+import { MessageSquareText, Search } from 'lucide-vue-next';
 import { inspirationCards } from '../data/inspirations';
 import { distributeGalleryItems } from '../utils/gallery';
 
@@ -8,7 +8,12 @@ const props = defineProps({
   columnCount: { type: Number, default: 4 },
 });
 
-const emit = defineEmits(['use-prompt', 'use-reference', 'preview']);
+const emit = defineEmits([
+  'use-prompt',
+  'use-reference',
+  'view-prompt',
+  'preview',
+]);
 
 const search = ref('');
 const activeTag = ref('全部');
@@ -45,6 +50,12 @@ const previewItems = computed(() =>
     src: item.image,
     name: item.title,
     editable: false,
+    prompt: item.prompt,
+    source: 'inspiration',
+    ratio: item.ratio,
+    resolution: item.resolution,
+    tag: item.tag,
+    mood: item.mood,
   })),
 );
 
@@ -146,6 +157,15 @@ function ratioStyle(ratio) {
               <h2>{{ item.title }}</h2>
               <p>{{ item.prompt }}</p>
               <div class="inspiration-card-actions">
+                <button
+                  type="button"
+                  class="inspiration-prompt-button"
+                  title="查看完整提示词"
+                  aria-label="查看完整提示词"
+                  @click="emit('view-prompt', item)"
+                >
+                  <MessageSquareText aria-hidden="true" />
+                </button>
                 <button
                   type="button"
                   title="填入快速创作"

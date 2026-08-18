@@ -37,6 +37,8 @@
     "asar": true,
     "compression": "maximum",
     "npmRebuild": false,
+    "removePackageScripts": true,
+    "removePackageKeywords": true,
     "electronLanguages": [
       "en-US",
       "zh-CN",
@@ -48,7 +50,13 @@
       "electron/**/*",
       "renderer/assets/logo-system.png",
       "build/icon-system.ico",
-      "renderer-dist/**/*"
+      "renderer-dist/**/*",
+      "!**/.env",
+      "!**/.env.*",
+      "!**/onboarding-state.json",
+      "!**/Gallery{,/**}",
+      "!**/tmp{,/**}",
+      "!**/dist{,/**}"
     ],
     "win": {
       "icon": "build/icon-system.ico",

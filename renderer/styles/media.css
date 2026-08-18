@@ -152,6 +152,10 @@
 .image-context-menu button.danger svg {
   color: #ff6f91;
 }
+.image-context-menu button svg.active {
+  fill: #dfb56f;
+  color: #e7c080;
+}
 .lightbox-close:hover {
   border-color: rgba(164, 125, 239, 0.22);
   background: rgba(70, 56, 94, 0.72);
@@ -205,6 +209,14 @@
   border-color: rgba(164, 125, 239, 0.28);
   background: rgba(48, 39, 68, 0.78);
   color: #e8e1f3;
+}
+.lightbox-actions .lightbox-favorite.active {
+  border-color: rgba(222, 179, 106, 0.48);
+  background: rgba(83, 54, 99, 0.88);
+  color: #efc77f;
+}
+.lightbox-actions .lightbox-favorite.active svg {
+  fill: currentColor;
 }
 .lightbox-actions .lightbox-edit {
   border-color: rgba(187, 153, 255, 0.5);

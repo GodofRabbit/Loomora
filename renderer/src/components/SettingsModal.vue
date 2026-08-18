@@ -1,12 +1,16 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import {
   Eye,
   EyeOff,
   FolderOpen,
+  HardDriveDownload,
+  HardDriveUpload,
+  Keyboard,
   RotateCcw,
   Save,
   ServerCog,
+  Trash2,
   X,
 } from 'lucide-vue-next';
 
@@ -17,14 +21,38 @@ const props = defineProps({
   storagePath: { type: String, default: '' },
   defaultStoragePath: { type: String, default: '' },
   saving: Boolean,
+  clearing: Boolean,
+  backupBusy: Boolean,
+  shortcuts: { type: Object, default: () => ({}) },
+  isMac: Boolean,
 });
-const emit = defineEmits(['close', 'save']);
+const emit = defineEmits([
+  'close',
+  'save',
+  'clear-data',
+  'create-backup',
+  'restore-backup',
+]);
 const endpointDraft = ref(props.endpoint);
 const apiKeyDraft = ref(props.apiKey);
 const apiKeyVisible = ref(false);
 const storageDraft = ref(props.storagePath);
 const choosingStorage = ref(false);
 const storageError = ref('');
+const shortcutDraft = ref({ ...props.shortcuts });
+const capturingShortcut = ref('');
+const shortcutError = ref('');
+const shortcutButtons = ref({});
+const shortcutOptions = [
+  { key: 'create', label: '返回创作页' },
+  { key: 'gallery', label: '打开作品库' },
+  { key: 'favorite', label: '收藏当前图片' },
+  { key: 'viewPrompt', label: '查看当前提示词' },
+  { key: 'copyPrompt', label: '复制当前提示词' },
+  { key: 'deleteImage', label: '删除当前图片' },
+  { key: 'previousImage', label: '上一张图片' },
+  { key: 'nextImage', label: '下一张图片' },
+];
 
 watch(
   () => props.open,
@@ -33,8 +61,11 @@ watch(
     endpointDraft.value = props.endpoint;
     apiKeyDraft.value = props.apiKey;
     storageDraft.value = props.storagePath;
+    shortcutDraft.value = structuredClone(props.shortcuts || {});
     apiKeyVisible.value = false;
     storageError.value = '';
+    shortcutError.value = '';
+    capturingShortcut.value = '';
   },
 );
 
@@ -63,6 +94,76 @@ async function chooseStorageDirectory() {
 
 function restoreDefaultStorage() {
   storageDraft.value = props.defaultStoragePath;
+}
+
+function shortcutText(binding = {}) {
+  const parts = [];
+  if (binding.mod) parts.push(props.isMac ? 'Command' : 'Ctrl');
+  if (binding.ctrl) parts.push('Ctrl');
+  if (binding.meta) parts.push('Command');
+  if (binding.alt) parts.push(props.isMac ? 'Option' : 'Alt');
+  if (binding.shift) parts.push('Shift');
+  const codeLabels = {
+    Delete: 'Delete',
+    Backspace: 'Backspace',
+    ArrowLeft: '←',
+    ArrowRight: '→',
+    ArrowUp: '↑',
+    ArrowDown: '↓',
+  };
+  parts.push(
+    codeLabels[binding.code] ||
+      String(binding.code || '')
+        .replace(/^Key/, '')
+        .replace(/^Digit/, ''),
+  );
+  return parts.filter(Boolean).join(' + ');
+}
+
+function startShortcutCapture(key) {
+  capturingShortcut.value = key;
+  shortcutError.value = '';
+  nextTick(() => shortcutButtons.value[key]?.focus());
+}
+
+function captureShortcut(event, key) {
+  if (capturingShortcut.value !== key) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return;
+  const code = String(event.code || '');
+  if (
+    !/^(Key[A-Z]|Digit[0-9]|Arrow(Left|Right|Up|Down)|Delete|Backspace|F([1-9]|1[0-2]))$/.test(
+      code,
+    )
+  ) {
+    shortcutError.value = '请使用字母、数字、方向键、Delete 或 F1-F12';
+    return;
+  }
+  const binding = {
+    code,
+    ...(event.ctrlKey ? { ctrl: true } : {}),
+    ...(event.metaKey ? { meta: true } : {}),
+    ...(event.altKey ? { alt: true } : {}),
+    ...(event.shiftKey ? { shift: true } : {}),
+  };
+  const duplicate = Object.entries(shortcutDraft.value).find(
+    ([otherKey, other]) =>
+      otherKey !== key && shortcutText(other) === shortcutText(binding),
+  );
+  if (duplicate) {
+    shortcutError.value = `该组合已用于“${shortcutOptions.find((item) => item.key === duplicate[0])?.label || duplicate[0]}”`;
+    return;
+  }
+  shortcutDraft.value = { ...shortcutDraft.value, [key]: binding };
+  capturingShortcut.value = '';
+  shortcutError.value = '';
+}
+
+async function resetShortcutDraft() {
+  shortcutDraft.value = await window.forge.resetShortcuts();
+  capturingShortcut.value = '';
+  shortcutError.value = '';
 }
 </script>
 
@@ -155,12 +256,89 @@ function restoreDefaultStorage() {
               {{ storageError }}
             </p>
           </section>
+          <section class="settings-group local-data-settings">
+            <div class="settings-group-title">
+              <HardDriveDownload aria-hidden="true" />
+              <div><b>备份与恢复</b><span>迁移本地作品与作品信息</span></div>
+            </div>
+            <div class="local-data-action settings-backup-action">
+              <span>备份包不包含 API Key，可在 Windows 与 macOS 间恢复。</span>
+              <div class="settings-backup-buttons">
+                <button
+                  type="button"
+                  :disabled="saving || clearing || backupBusy"
+                  @click="$emit('restore-backup')"
+                >
+                  <HardDriveUpload aria-hidden="true" />恢复备份
+                </button>
+                <button
+                  type="button"
+                  :disabled="saving || clearing || backupBusy"
+                  @click="$emit('create-backup')"
+                >
+                  <HardDriveDownload aria-hidden="true" />{{
+                    backupBusy ? '处理中...' : '创建备份'
+                  }}
+                </button>
+              </div>
+            </div>
+          </section>
+          <section class="settings-group shortcut-settings">
+            <div class="settings-group-title">
+              <Keyboard aria-hidden="true" />
+              <div><b>快捷键</b><span>点击键位后直接按下新的组合</span></div>
+            </div>
+            <div class="shortcut-settings-grid">
+              <div v-for="item in shortcutOptions" :key="item.key">
+                <span>{{ item.label }}</span>
+                <button
+                  :ref="(element) => (shortcutButtons[item.key] = element)"
+                  type="button"
+                  :class="{ capturing: capturingShortcut === item.key }"
+                  @click="startShortcutCapture(item.key)"
+                  @keydown="captureShortcut($event, item.key)"
+                >
+                  {{
+                    capturingShortcut === item.key
+                      ? '请按新快捷键'
+                      : shortcutText(shortcutDraft[item.key])
+                  }}
+                </button>
+              </div>
+            </div>
+            <div class="shortcut-settings-footer">
+              <span>{{ shortcutError }}</span>
+              <button type="button" @click="resetShortcutDraft">
+                <RotateCcw aria-hidden="true" />恢复默认
+              </button>
+            </div>
+          </section>
+          <section class="settings-group local-data-settings">
+            <div class="settings-group-title">
+              <Trash2 aria-hidden="true" />
+              <div>
+                <b>本地数据</b><span>管理此设备保存的 Loomora 数据</span>
+              </div>
+            </div>
+            <div class="local-data-action">
+              <span
+                >清除作品、创作历史、参考图缓存、接口配置和首次使用状态。</span
+              >
+              <button
+                type="button"
+                :disabled="saving || clearing"
+                @click="$emit('clear-data')"
+              >
+                <Trash2 aria-hidden="true" />清除本地数据
+              </button>
+            </div>
+          </section>
         </div>
         <footer>
           <button
             type="button"
             class="settings-cancel"
-            :disabled="saving"
+            :disabled="saving || clearing || backupBusy"
             @click="$emit('close')"
           >
             取消
@@ -168,8 +346,16 @@ function restoreDefaultStorage() {
           <button
             type="button"
             class="settings-save"
-            :disabled="saving || choosingStorage"
-            @click="$emit('save', endpointDraft, apiKeyDraft, storageDraft)"
+            :disabled="saving || choosingStorage || clearing || backupBusy"
+            @click="
+              $emit(
+                'save',
+                endpointDraft,
+                apiKeyDraft,
+                storageDraft,
+                shortcutDraft,
+              )
+            "
           >
             <Save aria-hidden="true" />{{ saving ? '正在保存...' : '保存配置' }}
           </button>

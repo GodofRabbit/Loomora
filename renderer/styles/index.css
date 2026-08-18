@@ -2,6 +2,9 @@
 @import './media.css';
 @import './image-editor-history.css';
 @import './gallery-ocr.css';
+@import './gallery-prompt.css';
+@import './gallery-version.css';
+@import './generation-queue.css';
 @import './settings.css';
 @import './interactions.css';
 @import './theme-layout.css';

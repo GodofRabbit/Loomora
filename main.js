@@ -1,12 +1,25 @@
 const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const path = require('path');
 const {
+  collectConversationTurns,
+  currentGalleryRoot,
+  listGallery,
   registerGalleryHandlers,
   registerGalleryProtocol,
   registerGalleryScheme,
+  saveConversationTurn,
 } = require('./electron/gallery');
 const { registerGenerationHandler } = require('./electron/generation');
+const {
+  registerGenerationQueueHandlers,
+} = require('./electron/generationQueue');
+const { registerBackupHandlers } = require('./electron/backup');
+const { registerLocalDataHandlers } = require('./electron/localData');
 const { registerPreferenceHandlers } = require('./electron/preferences');
+const {
+  registerSecureCredentialHandlers,
+} = require('./electron/secureCredentials');
+const { registerShortcutHandlers } = require('./electron/shortcuts');
 const {
   destroyWorker: destroyOcrWorker,
   registerOcrHandlers,
@@ -67,9 +80,19 @@ function createWindow() {
 configureUserDataPath();
 registerGalleryScheme();
 registerGalleryHandlers();
+registerBackupHandlers({
+  collectConversationTurns,
+  currentGalleryRoot,
+  listGallery,
+  saveConversationTurn,
+});
 registerGenerationHandler();
+registerGenerationQueueHandlers();
 registerOcrHandlers();
 registerPreferenceHandlers();
+registerSecureCredentialHandlers();
+registerShortcutHandlers();
+registerLocalDataHandlers();
 ipcMain.handle('get-app-info', () => ({
   name: app.getName(),
   version: app.getVersion(),
