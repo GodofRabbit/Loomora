@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-vue-next';
+import DropdownSelect from './DropdownSelect.vue';
 
 const props = defineProps({
   open: Boolean,
@@ -57,7 +58,16 @@ const apiKeyVisible = ref(false);
 const storageDraft = ref(props.storagePath);
 const choosingStorage = ref(false);
 const storageError = ref('');
-const shortcutDraft = ref({ ...props.shortcuts });
+function cloneShortcutBindings(value = {}) {
+  return Object.fromEntries(
+    Object.entries(value || {}).map(([key, binding]) => [
+      key,
+      binding && typeof binding === 'object' ? { ...binding } : binding,
+    ]),
+  );
+}
+
+const shortcutDraft = ref(cloneShortcutBindings(props.shortcuts));
 const capturingShortcut = ref('');
 const shortcutError = ref('');
 const shortcutButtons = ref({});
@@ -83,7 +93,7 @@ watch(
     modelDraft.value = props.model;
     providerDraft.value = props.providerId;
     storageDraft.value = props.storagePath;
-    shortcutDraft.value = structuredClone(props.shortcuts || {});
+    shortcutDraft.value = cloneShortcutBindings(props.shortcuts);
     apiKeyVisible.value = false;
     storageError.value = '';
     shortcutError.value = '';
@@ -126,6 +136,14 @@ watch(
   },
 );
 
+watch(
+  () => props.shortcuts,
+  (value) => {
+    if (props.open) shortcutDraft.value = cloneShortcutBindings(value);
+  },
+  { deep: true },
+);
+
 async function chooseStorageDirectory() {
   if (choosingStorage.value) return;
   choosingStorage.value = true;
@@ -146,8 +164,8 @@ function restoreDefaultStorage() {
   storageDraft.value = props.defaultStoragePath;
 }
 
-function changeProfile(event) {
-  profileDraftId.value = event.target.value;
+function changeProfile(profileId) {
+  profileDraftId.value = profileId;
   emit('profile-change', profileDraftId.value);
 }
 
@@ -252,15 +270,17 @@ async function resetShortcutDraft() {
             <div class="provider-profile-row">
               <label>
                 <span>当前服务</span>
-                <select :value="profileDraftId" @change="changeProfile">
-                  <option
-                    v-for="profile in providerProfiles"
-                    :key="profile.id"
-                    :value="profile.id"
-                  >
-                    {{ profile.name }}
-                  </option>
-                </select>
+                <DropdownSelect
+                  :model-value="profileDraftId"
+                  :options="
+                    providerProfiles.map((profile) => ({
+                      value: profile.id,
+                      label: profile.name,
+                    }))
+                  "
+                  aria-label="选择服务配置"
+                  @update:model-value="changeProfile"
+                />
               </label>
               <div class="provider-profile-actions">
                 <button
@@ -286,15 +306,17 @@ async function resetShortcutDraft() {
             </label>
             <label>
               <span>服务类型</span>
-              <select v-model="providerDraft">
-                <option
-                  v-for="provider in providerOptions"
-                  :key="provider.id"
-                  :value="provider.id"
-                >
-                  {{ provider.label }}
-                </option>
-              </select>
+              <DropdownSelect
+                :model-value="providerDraft"
+                :options="
+                  providerOptions.map((provider) => ({
+                    value: provider.id,
+                    label: provider.label,
+                  }))
+                "
+                aria-label="选择服务类型"
+                @update:model-value="providerDraft = $event"
+              />
             </label>
             <label
               ><span>接口地址</span
@@ -324,11 +346,7 @@ async function resetShortcutDraft() {
             <label>
               <span>默认模型</span>
               <div class="provider-model-row">
-                <input
-                  v-model="modelDraft"
-                  list="provider-model-options"
-                  placeholder="gpt-image-2"
-                />
+                <input v-model="modelDraft" placeholder="gpt-image-2" />
                 <button
                   type="button"
                   :disabled="
@@ -345,13 +363,14 @@ async function resetShortcutDraft() {
                   {{ providerModelsLoading ? '读取中...' : '读取模型' }}
                 </button>
               </div>
-              <datalist id="provider-model-options">
-                <option
-                  v-for="item in providerModels"
-                  :key="item"
-                  :value="item"
-                />
-              </datalist>
+              <DropdownSelect
+                v-if="providerModels.length"
+                class="provider-model-results"
+                :model-value="modelDraft"
+                :options="providerModels"
+                aria-label="选择已读取的模型"
+                @update:model-value="modelDraft = $event"
+              />
             </label>
           </section>
           <section class="settings-group">

@@ -1459,11 +1459,14 @@ function showCreationHistory() {
 }
 
 function returnToCreationStart() {
+  settingsOpen.value = false;
+  aboutOpen.value = false;
   view.value = 'create';
   creationHistoryVisible.value = false;
   conversationAwayFromBottom.value = false;
   composerCollapseRequested = false;
   contextMenu.value = null;
+  conversationScrollSnapshot = null;
   composerCollapseLockUntil = Date.now() + 520;
   nextTick(() => {
     if (scrollContainer.value) scrollContainer.value.scrollTop = 0;
@@ -1870,6 +1873,8 @@ async function loadGalleryStorageSettings() {
 }
 
 async function openSettings() {
+  aboutOpen.value = false;
+  settingsOpen.value = true;
   form.resetSettingsDraft();
   try {
     await Promise.all([loadGalleryStorageSettings(), loadShortcutBindings()]);
@@ -1879,7 +1884,11 @@ async function openSettings() {
       'error',
     );
   }
-  settingsOpen.value = true;
+}
+
+function openAbout() {
+  settingsOpen.value = false;
+  aboutOpen.value = true;
 }
 
 function requestClearLocalData() {
@@ -2424,7 +2433,7 @@ onBeforeUnmount(() => {
       @gallery="openGallery"
       @inspiration="openInspiration"
       @settings="openSettings"
-      @about="aboutOpen = true"
+      @about="openAbout"
     />
     <div
       ref="scrollContainer"
@@ -2661,7 +2670,7 @@ onBeforeUnmount(() => {
         <InspirationSquare
           v-if="inspirationVisited"
           v-show="view === 'inspiration'"
-          :column-count="galleryColumnCount"
+          :column-count="Math.min(galleryColumnCount, 4)"
           @use-prompt="useInspirationPrompt"
           @use-reference="useInspirationReference"
           @view-prompt="openImagePrompt"

@@ -1,0 +1,60 @@
+/* Keep native scroll containers visually aligned with the custom gallery rail. */
+:root {
+  --scrollbar-size: 5px;
+  --scrollbar-thumb: rgba(114, 74, 179, 0.76);
+  --scrollbar-thumb-hover: #55308f;
+}
+
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  ) {
+  /* Chromium otherwise lets the standard properties replace WebKit sizing. */
+  scrollbar-color: auto !important;
+  scrollbar-width: auto !important;
+}
+
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  )::-webkit-scrollbar {
+  width: var(--scrollbar-size) !important;
+  height: var(--scrollbar-size) !important;
+}
+
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  )::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  )::-webkit-scrollbar-thumb {
+  min-height: 48px;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--scrollbar-thumb) !important;
+  box-shadow: 0 0 7px rgba(126, 82, 201, 0.4) !important;
+}
+
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  )::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+  box-shadow: 0 0 12px #8855ff66 !important;
+}
+
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  )::-webkit-scrollbar-corner,
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  )::-webkit-scrollbar-button {
+  background: transparent;
+}
+
+:where(*):not(.app-shell):not(.content-scroll):not(.dropdown-select-panel):not(
+    .gallery-timeline
+  )::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+}

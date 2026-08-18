@@ -25,12 +25,20 @@
   overflow-y: auto;
 }
 .settings-group {
+  position: relative;
   display: grid;
   padding: 17px;
   border: 1px solid rgba(172, 132, 240, 0.16);
   border-radius: 8px;
   gap: 15px;
   background: rgba(35, 28, 54, 0.42);
+}
+.settings-group:has(.dropdown-select.open) {
+  z-index: 4;
+}
+.settings-modal-body .dropdown-select-trigger {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(32, 29, 53, 0.94);
 }
 .settings-group-title {
   display: flex;
@@ -271,6 +279,8 @@
   background: rgba(32, 29, 53, 0.94);
   color: #f3effb;
   font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
 }
 .settings-modal-body input:focus {
   border-color: rgba(157, 104, 255, 0.84);
@@ -351,6 +361,9 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
+.provider-model-results {
+  margin-top: 2px;
+}
 .provider-model-row button {
   height: 44px;
   padding: 0 10px;
@@ -390,7 +403,7 @@
 .settings-modal-body .storage-path-row input {
   overflow: hidden;
   color: #bbb3c8;
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
 }
 .storage-browse-button,

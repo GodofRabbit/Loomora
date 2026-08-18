@@ -15,7 +15,7 @@ const activeIndex = ref(0);
 const placement = ref('down');
 const listboxId = `dropdown-${Math.random().toString(36).slice(2, 9)}`;
 const normalizedOptions = computed(() =>
-  props.options.map((option) =>
+  (Array.isArray(props.options) ? props.options : []).map((option) =>
     typeof option === 'string' ? { value: option, label: option } : option,
   ),
 );

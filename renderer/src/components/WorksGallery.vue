@@ -837,27 +837,6 @@ function onConversationScroll() {
   }
 }
 
-function onConversationWheel(event) {
-  if (
-    suppressConversationScroll.value ||
-    props.conversationLoading ||
-    pendingConversationLoad
-  ) {
-    return;
-  }
-  const element = generationChat.value;
-  if (!element) return;
-  if (event.deltaY < 0 && element.scrollTop <= CONVERSATION_LOAD_EDGE) {
-    requestConversationWindow('older');
-    return;
-  }
-  const distanceFromBottom =
-    element.scrollHeight - element.clientHeight - element.scrollTop;
-  if (event.deltaY > 0 && distanceFromBottom <= CONVERSATION_LOAD_EDGE) {
-    requestConversationWindow('newer');
-  }
-}
-
 watch(
   () => [
     props.view,
@@ -1251,7 +1230,6 @@ onBeforeUnmount(() => {
         'start-screen': conversationStartMode,
       }"
       @scroll="onConversationScroll"
-      @wheel.passive="onConversationWheel"
     >
       <Transition
         name="creation-state"

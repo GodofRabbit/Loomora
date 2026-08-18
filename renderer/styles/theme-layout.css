@@ -42,6 +42,13 @@ body {
   background: #0b0818;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
   backdrop-filter: none;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.topbar button,
+.topbar a {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 .lightbox,
 .image-editor-modal,
@@ -115,6 +122,9 @@ body {
   color: #b7b2c3;
   font-size: 14px;
   text-decoration: none;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 .topbar nav a.active {
   border-bottom: 0;
@@ -226,11 +236,13 @@ body {
 .app-shell.create-view .works {
   display: flex;
   min-height: 0;
+  overflow: hidden;
   margin-top: 0;
   flex: 1 1 auto;
   flex-direction: column;
 }
 .app-shell.create-view .generation-chat {
+  height: 0;
   min-height: 0;
   max-height: none;
   margin-top: 0;
@@ -239,6 +251,8 @@ body {
   padding-left: clamp(12px, 2vw, 28px);
   padding-bottom: clamp(380px, 44vh, 560px);
   transition: padding-bottom 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  touch-action: pan-y;
+  scrollbar-gutter: stable;
 }
 .app-shell.create-view:has(.create-card.compact) .generation-chat {
   padding-bottom: clamp(88px, 10vh, 112px);

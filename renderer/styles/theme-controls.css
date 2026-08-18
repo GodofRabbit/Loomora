@@ -2232,18 +2232,20 @@
   justify-content: flex-end;
 }
 .inspiration-card-actions button {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 1 108px;
+  min-width: 108px;
+  min-height: 34px;
   height: 34px;
-  padding: 0 10px;
-  overflow: hidden;
+  padding: 0 9px;
+  overflow: visible;
   border: 1px solid rgba(176, 128, 255, 0.42);
   border-radius: 7px;
   background: rgba(114, 72, 188, 0.26);
   color: #efe7ff;
   font-size: 12px;
   font-weight: 700;
-  text-overflow: ellipsis;
+  line-height: 1;
+  text-overflow: clip;
   white-space: nowrap;
 }
 .inspiration-card-actions button:hover {

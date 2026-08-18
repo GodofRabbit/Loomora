@@ -21,42 +21,37 @@ LangString deleteUserDataQuestion 2052 "是否同时删除 Loomora 保存的本�
 ; per-user/per-machine context is used as the normal electron-builder cleanup.
 !macro customUnInit
   ${IfNot} ${Silent}
-    MessageBox MB_YESNO|MB_ICONQUESTION "$(deleteUserDataQuestion)" IDYES loomora_delete_user_data_done
-    Goto loomora_delete_user_data_done
-
-    loomora_delete_user_data_done:
-    ${If} $0 == ${IDYES}
-      Call un.checkAppRunning
-      ${if} $installMode == "all"
-        SetShellVarContext current
-      ${endif}
-      RMDir /r "$APPDATA\${APP_FILENAME}"
-      !ifdef APP_PRODUCT_FILENAME
-        RMDir /r "$APPDATA\${APP_PRODUCT_FILENAME}"
-      !endif
-      !ifdef APP_PACKAGE_NAME
-        RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
-      !endif
-      ${if} $installMode == "all"
-        SetShellVarContext all
-      ${endif}
+    MessageBox MB_YESNO|MB_ICONQUESTION "$(deleteUserDataQuestion)" IDNO loomora_keep_user_data
+    Call un.checkAppRunning
+    ${if} $installMode == "all"
+      SetShellVarContext current
     ${endif}
+    RMDir /r "$APPDATA\${APP_FILENAME}"
+    !ifdef APP_PRODUCT_FILENAME
+      RMDir /r "$APPDATA\${APP_PRODUCT_FILENAME}"
+    !endif
+    !ifdef APP_PACKAGE_NAME
+      RMDir /r "$APPDATA\${APP_PACKAGE_NAME}"
+    !endif
+    ${if} $installMode == "all"
+      SetShellVarContext all
+    ${endif}
+    loomora_keep_user_data:
   ${endif}
 !macroend
 
 !macro customWelcomePage
   !define MUI_PAGE_CUSTOMFUNCTION_SHOW loomoraWelcomeShow
   !insertmacro MUI_PAGE_WELCOME
-  !undef MUI_PAGE_CUSTOMFUNCTION_SHOW
-!macroend
 
-Function loomoraWelcomeShow
-  ; Only the welcome page is branded dark; all other pages retain the native
-  ; light body and footer supplied by Modern UI.
-  SetCtlColors $mui.WelcomePage "" "0B0818"
-  SetCtlColors $mui.WelcomePage.Title "EEE8FA" "0B0818"
-  SetCtlColors $mui.WelcomePage.Text "EEE8FA" "0B0818"
-FunctionEnd
+  Function loomoraWelcomeShow
+    ; Only the welcome page is branded dark; all other pages retain the native
+    ; light body and footer supplied by Modern UI.
+    SetCtlColors $mui.WelcomePage "" "0B0818"
+    SetCtlColors $mui.WelcomePage.Title "EEE8FA" "0B0818"
+    SetCtlColors $mui.WelcomePage.Text "EEE8FA" "0B0818"
+  FunctionEnd
+!macroend
 
 !macro customHeader
   BrandingText "Loomora · 织光成画"
