@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('forge', {
   getSecureApiKey: () => ipcRenderer.invoke('get-secure-api-key'),
   setSecureApiKey: (value) => ipcRenderer.invoke('set-secure-api-key', value),
   clearSecureApiKey: () => ipcRenderer.invoke('clear-secure-api-key'),
+  listGenerationProviders: () =>
+    ipcRenderer.invoke('list-generation-providers'),
   getShortcuts: () => ipcRenderer.invoke('get-shortcuts'),
   setShortcuts: (value) => ipcRenderer.invoke('set-shortcuts', value),
   resetShortcuts: () => ipcRenderer.invoke('reset-shortcuts'),

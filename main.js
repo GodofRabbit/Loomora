@@ -10,6 +10,7 @@ const {
   saveConversationTurn,
 } = require('./electron/gallery');
 const { registerGenerationHandler } = require('./electron/generation');
+const { listProviders } = require('./electron/providers');
 const {
   registerGenerationQueueHandlers,
 } = require('./electron/generationQueue');
@@ -87,6 +88,7 @@ registerBackupHandlers({
   saveConversationTurn,
 });
 registerGenerationHandler();
+ipcMain.handle('list-generation-providers', () => listProviders());
 registerGenerationQueueHandlers();
 registerOcrHandlers();
 registerPreferenceHandlers();

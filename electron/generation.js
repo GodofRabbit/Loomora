@@ -1,21 +1,12 @@
 const { ipcMain } = require('electron');
 const { saveGeneratedImages } = require('./gallery');
+const { getProvider } = require('./providers');
 
-const DEFAULT_ENDPOINT = 'https://api.openai.com';
 const OPENAI_IMAGE_MODEL = 'gpt-image-2';
 const PARTIAL_IMAGE_COUNT = 2;
 const MAX_GENERATION_COUNT = 10;
 const MAX_REFERENCE_COUNT = 16;
 const DEFAULT_PROMPT_LIMIT = 4000;
-const SIZE_BY_RATIO = {
-  '1:1': '1024x1024',
-  '16:9': '2048x1152',
-  '9:16': '1152x2048',
-  '4:3': '1536x1152',
-  '3:4': '1152x1536',
-  '3:2': '1536x1024',
-  '2:3': '1024x1536',
-};
 const MODEL_ALIASES = {
   'dall-e': OPENAI_IMAGE_MODEL,
   'dall-e-2': OPENAI_IMAGE_MODEL,
@@ -42,11 +33,6 @@ const USER_ERROR_RULES = [
 let activeGeneration = null;
 
 const normalizeModel = (model) => MODEL_ALIASES[model] || OPENAI_IMAGE_MODEL;
-const requestHeaders = (key, json = false) => ({
-  Authorization: `Bearer ${key}`,
-  ...(json ? { 'Content-Type': 'application/json' } : {}),
-});
-
 function formatUserError(value, fallback = '操作失败，请稍后重试') {
   const raw =
     typeof value === 'string'
@@ -60,17 +46,6 @@ function formatUserError(value, fallback = '操作失败，请稍后重试') {
     if (rule.test(lower)) return text;
   }
   return fallback;
-}
-
-function endpointBase(endpoint) {
-  const value = String(endpoint || DEFAULT_ENDPOINT).trim() || DEFAULT_ENDPOINT;
-  const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
-    ? value
-    : `https://${value}`;
-  const url = new URL(withProtocol);
-  const path = url.pathname.replace(/\/+$/, '');
-  const normalizedPath = path && path !== '/' ? path : '/v1';
-  return `${url.origin}${normalizedPath}`;
 }
 
 function imagesOf(data) {
@@ -130,87 +105,10 @@ function report(event, payload) {
   emitUpdate(event, payload);
 }
 
-function requestedSize(payload) {
-  if (payload.size === 'auto' || isOpenAiImageSize(payload.size)) {
-    return payload.size;
-  }
-  return SIZE_BY_RATIO[payload.aspect] || '1024x1024';
-}
-
-function isOpenAiImageSize(size) {
-  const match = String(size || '').match(/^(\d+)x(\d+)$/);
-  if (!match) return false;
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  const pixels = width * height;
-  const ratio = Math.max(width, height) / Math.min(width, height);
-  return (
-    width >= 1024 &&
-    height >= 1024 &&
-    width % 16 === 0 &&
-    height % 16 === 0 &&
-    pixels >= 1024 &&
-    pixels <= 16777216 &&
-    ratio < 3
-  );
-}
-
-function requestedQuality(payload) {
-  return ['low', 'medium', 'high', 'auto'].includes(payload.quality)
-    ? payload.quality
-    : 'auto';
-}
-
 function requestedOutputFormat(payload) {
   return ['png', 'jpeg', 'webp'].includes(payload.outputFormat)
     ? payload.outputFormat
     : 'png';
-}
-
-function generationBody(payload, model, { count = 1, stream = false } = {}) {
-  return {
-    model,
-    prompt: payload.prompt.trim(),
-    size: requestedSize(payload),
-    quality: requestedQuality(payload),
-    output_format: requestedOutputFormat(payload),
-    ...(count > 1 ? { n: count } : {}),
-    ...(stream ? { stream: true, partial_images: PARTIAL_IMAGE_COUNT } : {}),
-  };
-}
-
-function parseDataUrl(dataUrl) {
-  const match = String(dataUrl || '').match(
-    /^data:([^;,]+)(?:;[^,]*)?,([a-zA-Z0-9+/=\s]+)$/,
-  );
-  if (!match) throw new Error('参考图数据无效');
-  return {
-    mime: match[1],
-    buffer: Buffer.from(match[2].replace(/\s/g, ''), 'base64'),
-  };
-}
-
-function appendReferenceImages(form, references) {
-  references.forEach((item, index) => {
-    const { mime, buffer } = parseDataUrl(item.data);
-    const extension = mime.includes('jpeg')
-      ? 'jpg'
-      : mime.includes('webp')
-        ? 'webp'
-        : 'png';
-    const name = item.name || `reference-${index + 1}.${extension}`;
-    form.append('image[]', new Blob([buffer], { type: mime }), name);
-  });
-}
-
-function editBody(payload, model, references, options = {}) {
-  const form = new FormData();
-  const body = generationBody(payload, model, options);
-  for (const [key, value] of Object.entries(body)) {
-    form.append(key, String(value));
-  }
-  appendReferenceImages(form, references);
-  return form;
 }
 
 async function responseText(response) {
@@ -342,26 +240,16 @@ async function sendOpenAiRequest(
   signal,
   options = {},
 ) {
-  const useEdit = references.length > 0;
-  const base = endpointBase(payload.endpoint);
-  const stream = Boolean(options.stream);
-  const count = Math.max(1, Number(options.count) || 1);
-  const response = await fetch(
-    `${base}/images/${useEdit ? 'edits' : 'generations'}`,
-    {
-      method: 'POST',
-      headers: requestHeaders(payload.apiKey, !useEdit),
-      body: useEdit
-        ? editBody(payload, model, references, { count, stream })
-        : JSON.stringify(generationBody(payload, model, { count, stream })),
-      signal,
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(await responseText(response));
-  }
-
+  const provider = getProvider(payload.providerId);
+  if (!provider) throw new Error(`未找到生图服务：${payload.providerId}`);
+  const response = await provider.generate({
+    payload: { ...payload, model },
+    references,
+    signal,
+    count: Math.max(1, Number(options.count) || 1),
+    stream: Boolean(options.stream),
+  });
+  if (!response.ok) throw new Error(await responseText(response));
   return response;
 }
 

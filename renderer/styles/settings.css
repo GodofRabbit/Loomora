@@ -110,6 +110,34 @@
   color: #c7c0d5;
   font-size: 12px;
 }
+.provider-profile-row {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+.provider-profile-row > label {
+  min-width: 0;
+  flex: 1;
+}
+.provider-profile-actions {
+  display: flex;
+  padding-bottom: 1px;
+  gap: 7px;
+}
+.provider-profile-actions button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(171, 124, 234, 0.35);
+  border-radius: 6px;
+  background: rgba(92, 60, 141, 0.32);
+  color: #d9c9ef;
+  font-size: 12px;
+}
+.provider-profile-actions button:hover {
+  border-color: rgba(206, 171, 250, 0.7);
+  background: rgba(120, 80, 178, 0.52);
+  color: #fff;
+}
 .rename-hint {
   color: #8d87a1;
   font-size: 11px;

@@ -49,6 +49,45 @@ const ratioLabels = {
 const legacyOpenAiEndpointPattern = /^https:\/\/api\.openai\.com\/v1\/?$/i;
 const CONVERSATION_PAGE_SIZE = 10;
 const CONVERSATION_WINDOW_SIZE = CONVERSATION_PAGE_SIZE * 3;
+const PROVIDER_PROFILES_STORAGE = 'loomora-provider-profiles-v1';
+const ACTIVE_PROVIDER_PROFILE_STORAGE = 'loomora-active-provider-profile-v1';
+
+function createDefaultProviderProfile() {
+  const storedEndpoint = localStorage.getItem(ENDPOINT_STORAGE);
+  return {
+    id: 'openai-main',
+    name: 'OpenAI 兼容服务',
+    providerId: 'openai-compatible',
+    endpoint: normalizeEndpoint(storedEndpoint),
+    model: OPENAI_IMAGE_MODEL,
+  };
+}
+
+function readProviderProfiles() {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(PROVIDER_PROFILES_STORAGE) || '[]',
+    );
+    if (!Array.isArray(parsed) || !parsed.length) {
+      return [createDefaultProviderProfile()];
+    }
+    return parsed
+      .filter((item) => item && item.id)
+      .map((item) => ({
+        id: String(item.id),
+        name: String(item.name || '未命名服务'),
+        providerId: String(item.providerId || 'openai-compatible'),
+        endpoint: String(item.endpoint || ''),
+        model: String(item.model || OPENAI_IMAGE_MODEL),
+      }));
+  } catch {
+    return [createDefaultProviderProfile()];
+  }
+}
+
+function persistProviderProfiles(profiles) {
+  localStorage.setItem(PROVIDER_PROFILES_STORAGE, JSON.stringify(profiles));
+}
 
 function normalizeEndpoint(value, fallback = DEFAULT_ENDPOINT) {
   const endpoint = String(value || '').trim();
@@ -100,15 +139,37 @@ export function useGenerationForm({
   );
   const activeQueueTaskId = ref('');
   let queueProcessing = false;
-  const endpoint = ref(
-    normalizeEndpoint(localStorage.getItem(ENDPOINT_STORAGE)),
+  const providerProfiles = ref(readProviderProfiles());
+  const storedActiveProfileId = localStorage.getItem(
+    ACTIVE_PROVIDER_PROFILE_STORAGE,
   );
+  const activeProfileId = ref(
+    providerProfiles.value.some((item) => item.id === storedActiveProfileId)
+      ? storedActiveProfileId
+      : providerProfiles.value[0].id,
+  );
+  const activeProfile = computed(
+    () =>
+      providerProfiles.value.find(
+        (item) => item.id === activeProfileId.value,
+      ) || providerProfiles.value[0],
+  );
+  const endpoint = ref(activeProfile.value?.endpoint || DEFAULT_ENDPOINT);
   const apiKey = ref('');
-  const model = ref(OPENAI_IMAGE_MODEL);
+  const model = ref(activeProfile.value?.model || OPENAI_IMAGE_MODEL);
   const resolution = ref('auto');
   const quality = ref('auto');
   const outputFormat = ref('png');
+  const settingsProfileId = ref(activeProfileId.value);
+  const settingsProfileName = ref(activeProfile.value?.name || '未命名服务');
+  const settingsProviderId = ref(
+    activeProfile.value?.providerId || 'openai-compatible',
+  );
   const settingsEndpoint = ref(endpoint.value);
+  const settingsModel = ref(model.value);
+  const providerOptions = ref([
+    { id: 'openai-compatible', label: 'OpenAI 兼容接口' },
+  ]);
   const settingsApiKey = ref(apiKey.value);
   const activeConversationId = ref('');
 
@@ -181,6 +242,8 @@ export function useGenerationForm({
       createdAt: Date.now(),
       prompt: request.prompt.trim(),
       model: request.model,
+      providerId: request.providerId || 'openai-compatible',
+      profileId: request.profileId || activeProfileId.value,
       ratio: request.aspect,
       resolution: request.size,
       quality: request.quality,
@@ -675,6 +738,12 @@ export function useGenerationForm({
     return {
       endpoint: String(overrides.endpoint || endpoint.value),
       apiKey: String(overrides.apiKey || apiKey.value),
+      providerId: String(
+        overrides.providerId ||
+          activeProfile.value?.providerId ||
+          'openai-compatible',
+      ),
+      profileId: String(overrides.profileId || activeProfileId.value),
       model: String(overrides.model || model.value),
       prompt: String(overrides.prompt ?? prompt.value),
       aspect: requestRatio,
@@ -735,6 +804,12 @@ export function useGenerationForm({
       reuseTurn: options.reuseTurn ? turn : null,
       request: {
         model: String(turn.model || model.value),
+        providerId: String(
+          turn.providerId ||
+            activeProfile.value?.providerId ||
+            'openai-compatible',
+        ),
+        profileId: String(turn.profileId || activeProfileId.value),
         prompt: String(turn.prompt),
         aspect: historicalRatio,
         size:
@@ -793,19 +868,72 @@ export function useGenerationForm({
   }
 
   function resetSettingsDraft() {
+    settingsProfileId.value = activeProfileId.value;
+    settingsProfileName.value = activeProfile.value?.name || '未命名服务';
+    settingsProviderId.value =
+      activeProfile.value?.providerId || 'openai-compatible';
     settingsEndpoint.value = endpoint.value;
+    settingsModel.value = model.value;
     settingsApiKey.value = apiKey.value;
   }
 
-  async function hydrateSecureApiKey() {
+  async function selectProviderProfile(profileId) {
+    const next = providerProfiles.value.find((item) => item.id === profileId);
+    if (!next) return false;
+    activeProfileId.value = next.id;
+    endpoint.value = next.endpoint;
+    model.value = next.model || OPENAI_IMAGE_MODEL;
+    settingsProfileId.value = next.id;
+    settingsProfileName.value = next.name;
+    settingsProviderId.value = next.providerId;
+    settingsEndpoint.value = next.endpoint;
+    settingsModel.value = model.value;
+    localStorage.setItem(ACTIVE_PROVIDER_PROFILE_STORAGE, next.id);
+    await hydrateSecureApiKey(next.id, { migrateLegacy: false });
+    return true;
+  }
+
+  function createProviderProfile() {
+    const id = `service-${Date.now().toString(36)}`;
+    const profile = {
+      id,
+      name: `新服务 ${providerProfiles.value.length + 1}`,
+      providerId: 'openai-compatible',
+      endpoint: '',
+      model: OPENAI_IMAGE_MODEL,
+    };
+    providerProfiles.value = [...providerProfiles.value, profile];
+    persistProviderProfiles(providerProfiles.value);
+    return selectProviderProfile(id);
+  }
+
+  function deleteProviderProfile(profileId = activeProfileId.value) {
+    if (providerProfiles.value.length <= 1) return false;
+    const nextProfiles = providerProfiles.value.filter(
+      (item) => item.id !== profileId,
+    );
+    providerProfiles.value = nextProfiles;
+    persistProviderProfiles(nextProfiles);
+    window.forge?.clearSecureApiKey?.(profileId);
+    const next = nextProfiles[0];
+    return selectProviderProfile(next.id);
+  }
+
+  async function hydrateSecureApiKey(
+    profileId = activeProfileId.value,
+    { migrateLegacy = true } = {},
+  ) {
     const legacyApiKey = localStorage.getItem(API_KEY_STORAGE) || '';
     try {
-      if (legacyApiKey && window.forge?.setSecureApiKey) {
-        await window.forge.setSecureApiKey(legacyApiKey);
+      if (window.forge?.listGenerationProviders) {
+        providerOptions.value = await window.forge.listGenerationProviders();
+      }
+      if (migrateLegacy && legacyApiKey && window.forge?.setSecureApiKey) {
+        await window.forge.setSecureApiKey('openai-main', legacyApiKey);
         localStorage.removeItem(API_KEY_STORAGE);
       }
       apiKey.value = window.forge?.getSecureApiKey
-        ? await window.forge.getSecureApiKey()
+        ? await window.forge.getSecureApiKey(profileId)
         : '';
       settingsApiKey.value = apiKey.value;
       await loadGenerationQueue();
@@ -819,13 +947,33 @@ export function useGenerationForm({
 
   async function saveSettings() {
     // 保存时保留空地址，生成入口才能及时识别“未配置”状态。
-    endpoint.value = normalizeEndpoint(settingsEndpoint.value, '');
+    const profileId = settingsProfileId.value || activeProfileId.value;
+    const nextProfile = {
+      id: profileId,
+      name: settingsProfileName.value.trim() || '未命名服务',
+      providerId: settingsProviderId.value || 'openai-compatible',
+      endpoint: normalizeEndpoint(settingsEndpoint.value, ''),
+      model: settingsModel.value.trim() || OPENAI_IMAGE_MODEL,
+    };
+    const nextProfiles = providerProfiles.value.some(
+      (item) => item.id === profileId,
+    )
+      ? providerProfiles.value.map((item) =>
+          item.id === profileId ? nextProfile : item,
+        )
+      : [...providerProfiles.value, nextProfile];
+    providerProfiles.value = nextProfiles;
+    persistProviderProfiles(nextProfiles);
+    activeProfileId.value = profileId;
+    localStorage.setItem(ACTIVE_PROVIDER_PROFILE_STORAGE, profileId);
+    endpoint.value = nextProfile.endpoint;
+    model.value = nextProfile.model;
     apiKey.value = settingsApiKey.value.trim();
     if (endpoint.value) localStorage.setItem(ENDPOINT_STORAGE, endpoint.value);
     else localStorage.removeItem(ENDPOINT_STORAGE);
     localStorage.removeItem(API_KEY_STORAGE);
     if (window.forge?.setSecureApiKey) {
-      await window.forge.setSecureApiKey(apiKey.value);
+      await window.forge.setSecureApiKey(profileId, apiKey.value);
     }
     status.value = '配置已保存';
     showToast('配置已保存');
@@ -835,9 +983,18 @@ export function useGenerationForm({
   function clearLocalSettings() {
     localStorage.removeItem(ENDPOINT_STORAGE);
     localStorage.removeItem(API_KEY_STORAGE);
+    localStorage.removeItem(PROVIDER_PROFILES_STORAGE);
+    localStorage.removeItem(ACTIVE_PROVIDER_PROFILE_STORAGE);
+    providerProfiles.value = [createDefaultProviderProfile()];
+    activeProfileId.value = providerProfiles.value[0].id;
     endpoint.value = DEFAULT_ENDPOINT;
     apiKey.value = '';
+    model.value = OPENAI_IMAGE_MODEL;
+    settingsProfileId.value = activeProfileId.value;
+    settingsProfileName.value = providerProfiles.value[0].name;
+    settingsProviderId.value = providerProfiles.value[0].providerId;
     settingsEndpoint.value = DEFAULT_ENDPOINT;
+    settingsModel.value = OPENAI_IMAGE_MODEL;
     settingsApiKey.value = '';
     prompt.value = '';
     reference.value = [];
@@ -993,7 +1150,6 @@ export function useGenerationForm({
     if (
       queueProcessing ||
       queuePaused.value ||
-      !apiKey.value.trim() ||
       !window.forge?.getGenerationQueueTask
     ) {
       return;
@@ -1019,9 +1175,21 @@ export function useGenerationForm({
             );
             continue;
           }
+          const taskApiKey = window.forge?.getSecureApiKey
+            ? await window.forge.getSecureApiKey(task.request?.profileId)
+            : apiKey.value;
+          if (!taskApiKey?.trim()) {
+            taskError = '请先配置当前服务的 API Key';
+            await setQueueTaskStatus(nextTask.id, 'failed', taskError);
+            activeQueueTaskId.value = '';
+            nextTask = generationQueue.value.find(
+              (item) => item.status === 'pending',
+            );
+            continue;
+          }
           succeeded = await executeQueuedGeneration({
             ...task.request,
-            apiKey: apiKey.value,
+            apiKey: taskApiKey,
           });
           if (!succeeded) taskError = status.value || '图片生成失败';
         } catch (error) {
@@ -1138,12 +1306,19 @@ export function useGenerationForm({
     generationQueue,
     queuePaused,
     activeQueueTaskId,
+    providerProfiles,
+    activeProfileId,
     model,
     resolution,
     quality,
     outputFormat,
     settingsEndpoint,
     settingsApiKey,
+    settingsProfileId,
+    settingsProfileName,
+    settingsProviderId,
+    settingsModel,
+    providerOptions,
     modelIsGpt,
     modelIsGemini,
     ratioOptions,
@@ -1170,6 +1345,9 @@ export function useGenerationForm({
     pickReference,
     removeReference,
     resetSettingsDraft,
+    selectProviderProfile,
+    createProviderProfile,
+    deleteProviderProfile,
     hydrateSecureApiKey,
     loadGenerationQueue,
     toggleQueuePause,

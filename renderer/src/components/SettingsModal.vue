@@ -18,6 +18,12 @@ const props = defineProps({
   open: Boolean,
   endpoint: { type: String, required: true },
   apiKey: { type: String, required: true },
+  providerProfiles: { type: Array, default: () => [] },
+  activeProfileId: { type: String, default: '' },
+  profileName: { type: String, default: '' },
+  providerId: { type: String, default: 'openai-compatible' },
+  providerOptions: { type: Array, default: () => [] },
+  model: { type: String, default: 'gpt-image-2' },
   storagePath: { type: String, default: '' },
   defaultStoragePath: { type: String, default: '' },
   saving: Boolean,
@@ -32,9 +38,16 @@ const emit = defineEmits([
   'clear-data',
   'create-backup',
   'restore-backup',
+  'profile-change',
+  'profile-create',
+  'profile-delete',
 ]);
+const profileDraftId = ref(props.activeProfileId);
 const endpointDraft = ref(props.endpoint);
 const apiKeyDraft = ref(props.apiKey);
+const profileNameDraft = ref(props.profileName);
+const modelDraft = ref(props.model);
+const providerDraft = ref(props.providerId);
 const apiKeyVisible = ref(false);
 const storageDraft = ref(props.storagePath);
 const choosingStorage = ref(false);
@@ -60,12 +73,44 @@ watch(
     if (!open) return;
     endpointDraft.value = props.endpoint;
     apiKeyDraft.value = props.apiKey;
+    profileDraftId.value = props.activeProfileId;
+    profileNameDraft.value = props.profileName;
+    modelDraft.value = props.model;
+    providerDraft.value = props.providerId;
     storageDraft.value = props.storagePath;
     shortcutDraft.value = structuredClone(props.shortcuts || {});
     apiKeyVisible.value = false;
     storageError.value = '';
     shortcutError.value = '';
     capturingShortcut.value = '';
+  },
+);
+
+watch(
+  () => props.profileName,
+  (value) => {
+    if (props.open) profileNameDraft.value = value;
+  },
+);
+
+watch(
+  () => props.model,
+  (value) => {
+    if (props.open) modelDraft.value = value;
+  },
+);
+
+watch(
+  () => props.providerId,
+  (value) => {
+    if (props.open) providerDraft.value = value;
+  },
+);
+
+watch(
+  () => props.activeProfileId,
+  (value) => {
+    if (props.open) profileDraftId.value = value;
   },
 );
 
@@ -94,6 +139,11 @@ async function chooseStorageDirectory() {
 
 function restoreDefaultStorage() {
   storageDraft.value = props.defaultStoragePath;
+}
+
+function changeProfile(event) {
+  profileDraftId.value = event.target.value;
+  emit('profile-change', profileDraftId.value);
 }
 
 function shortcutText(binding = {}) {
@@ -174,11 +224,11 @@ async function resetShortcutDraft() {
         class="settings-modal settings-preferences-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="接口设置"
+        aria-label="生图服务设置"
         @click.stop
       >
         <header>
-          <div><b>接口设置</b><span>配置 OpenAI 兼容接口</span></div>
+          <div><b>生图服务设置</b><span>管理不同平台的服务配置</span></div>
           <button
             type="button"
             title="关闭设置"
@@ -192,8 +242,55 @@ async function resetShortcutDraft() {
           <section class="settings-group">
             <div class="settings-group-title">
               <ServerCog aria-hidden="true" />
-              <div><b>接口配置</b><span>连接 OpenAI 兼容服务</span></div>
+              <div><b>服务配置</b><span>连接当前选择的生图平台</span></div>
             </div>
+            <div class="provider-profile-row">
+              <label>
+                <span>当前服务</span>
+                <select :value="profileDraftId" @change="changeProfile">
+                  <option
+                    v-for="profile in providerProfiles"
+                    :key="profile.id"
+                    :value="profile.id"
+                  >
+                    {{ profile.name }}
+                  </option>
+                </select>
+              </label>
+              <div class="provider-profile-actions">
+                <button
+                  type="button"
+                  title="新建服务"
+                  @click="emit('profile-create')"
+                >
+                  新建
+                </button>
+                <button
+                  v-if="providerProfiles.length > 1"
+                  type="button"
+                  title="删除当前服务"
+                  @click="emit('profile-delete', profileDraftId)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+            <label>
+              <span>服务名称</span>
+              <input v-model="profileNameDraft" placeholder="未命名服务" />
+            </label>
+            <label>
+              <span>服务类型</span>
+              <select v-model="providerDraft">
+                <option
+                  v-for="provider in providerOptions"
+                  :key="provider.id"
+                  :value="provider.id"
+                >
+                  {{ provider.label }}
+                </option>
+              </select>
+            </label>
             <label
               ><span>接口地址</span
               ><input
@@ -218,6 +315,10 @@ async function resetShortcutDraft() {
                   <Eye v-else aria-hidden="true" />
                 </button>
               </div>
+            </label>
+            <label>
+              <span>默认模型</span>
+              <input v-model="modelDraft" placeholder="gpt-image-2" />
             </label>
           </section>
           <section class="settings-group">
@@ -354,6 +455,12 @@ async function resetShortcutDraft() {
                 apiKeyDraft,
                 storageDraft,
                 shortcutDraft,
+                {
+                  profileId: profileDraftId,
+                  profileName: profileNameDraft,
+                  providerId: providerDraft,
+                  model: modelDraft,
+                },
               )
             "
           >

@@ -161,12 +161,19 @@ const {
   generationQueue,
   queuePaused,
   activeQueueTaskId,
+  providerProfiles,
+  activeProfileId,
   model,
   resolution,
   quality,
   outputFormat,
   settingsEndpoint,
   settingsApiKey,
+  settingsProfileId,
+  settingsProfileName,
+  settingsProviderId,
+  settingsModel,
+  providerOptions,
   modelIsGpt,
   modelIsGemini,
   ratioOptions,
@@ -189,6 +196,9 @@ const {
   hydrateSecureApiKey,
   loadConversationReferences,
   regenerateFromConversation,
+  selectProviderProfile,
+  createProviderProfile,
+  deleteProviderProfile,
 } = form;
 
 const ocr = useOcr(showToast);
@@ -1937,7 +1947,25 @@ async function clearLocalData() {
   }
 }
 
-async function saveSettings(endpoint, apiKey, storagePath, shortcuts) {
+async function handleProviderProfileChange(profileId) {
+  await selectProviderProfile(profileId);
+}
+
+async function handleProviderProfileCreate() {
+  await createProviderProfile();
+}
+
+async function handleProviderProfileDelete(profileId) {
+  await deleteProviderProfile(profileId);
+}
+
+async function saveSettings(
+  endpoint,
+  apiKey,
+  storagePath,
+  shortcuts,
+  profile = {},
+) {
   if (settingsSaving.value) return;
   settingsSaving.value = true;
   const previousDirectory = galleryDirectory.value;
@@ -1951,6 +1979,11 @@ async function saveSettings(endpoint, apiKey, storagePath, shortcuts) {
     );
     settingsEndpoint.value = endpoint;
     settingsApiKey.value = apiKey;
+    settingsProfileId.value = profile.profileId || activeProfileId.value;
+    settingsProfileName.value =
+      profile.profileName || settingsProfileName.value;
+    settingsProviderId.value = profile.providerId || settingsProviderId.value;
+    settingsModel.value = profile.model || settingsModel.value;
     await form.saveSettings();
     shortcutBindings.value = await window.forge.setShortcuts(shortcuts);
     settingsOpen.value = false;
@@ -2753,6 +2786,12 @@ onBeforeUnmount(() => {
       :open="settingsOpen"
       :endpoint="settingsEndpoint"
       :api-key="settingsApiKey"
+      :provider-profiles="providerProfiles"
+      :active-profile-id="activeProfileId"
+      :profile-name="settingsProfileName"
+      :provider-id="settingsProviderId"
+      :provider-options="providerOptions"
+      :model="settingsModel"
       :storage-path="galleryDirectory"
       :default-storage-path="defaultGalleryDirectory"
       :saving="settingsSaving"
@@ -2765,6 +2804,9 @@ onBeforeUnmount(() => {
       @clear-data="requestClearLocalData"
       @create-backup="createLocalBackup"
       @restore-backup="restoreLocalBackup"
+      @profile-change="handleProviderProfileChange"
+      @profile-create="handleProviderProfileCreate"
+      @profile-delete="handleProviderProfileDelete"
     />
     <AboutModal
       :open="aboutOpen"
