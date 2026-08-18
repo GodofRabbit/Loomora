@@ -35,6 +35,12 @@ const finishedCount = computed(
     props.tasks.filter((task) => ['done', 'failed'].includes(task.status))
       .length,
 );
+const displayTasks = computed(() =>
+  [...props.tasks].sort(
+    (first, second) =>
+      (Number(second.createdAt) || 0) - (Number(first.createdAt) || 0),
+  ),
+);
 
 const statusText = {
   pending: '等待中',
@@ -128,7 +134,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="generation-queue-list">
           <article
-            v-for="task in tasks"
+            v-for="task in displayTasks"
             :key="task.id"
             :class="[task.status, { locatable: canLocateTask(task) }]"
             :role="canLocateTask(task) ? 'button' : undefined"
