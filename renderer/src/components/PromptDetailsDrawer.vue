@@ -6,6 +6,7 @@ import {
   Copy,
   FileText,
   FolderHeart,
+  FolderOpen,
   GitCompare,
   LoaderCircle,
   Palette,
@@ -24,7 +25,14 @@ const props = defineProps({
   error: { type: String, default: '' },
 });
 
-const emit = defineEmits(['close', 'copy', 'use', 'save', 'compare']);
+const emit = defineEmits([
+  'close',
+  'copy',
+  'use',
+  'save',
+  'compare',
+  'open-location',
+]);
 const editing = ref(false);
 const titleDraft = ref('');
 const promptDraft = ref('');
@@ -303,7 +311,19 @@ const metadataRows = computed(() => {
             <dl v-if="metadataRows.length" class="prompt-details-metadata">
               <div v-for="([label, value], index) in metadataRows" :key="index">
                 <dt>{{ label }}</dt>
-                <dd>{{ value }}</dd>
+                <dd>
+                  <button
+                    v-if="label === '存储位置'"
+                    type="button"
+                    class="prompt-details-path-button"
+                    title="打开文件所在位置"
+                    @click="$emit('open-location')"
+                  >
+                    <FolderOpen aria-hidden="true" />
+                    <span>{{ value }}</span>
+                  </button>
+                  <template v-else>{{ value }}</template>
+                </dd>
               </div>
             </dl>
             <div v-if="details?.note" class="prompt-details-note-view">
@@ -363,7 +383,7 @@ const metadataRows = computed(() => {
             :disabled="loading || !details?.prompt"
             @click="$emit('use')"
           >
-            <Sparkles aria-hidden="true" />用于创作
+            <Sparkles aria-hidden="true" />重新创作
           </button>
         </footer>
       </aside>

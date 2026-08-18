@@ -1,6 +1,9 @@
 const { ipcMain } = require('electron');
 const { saveGeneratedImages } = require('./gallery');
 const { getProvider } = require('./providers');
+const {
+  isOfficialOpenAiEndpoint,
+} = require('./providers/openaiCompatibleProvider');
 
 const OPENAI_IMAGE_MODEL = 'gpt-image-2';
 const PARTIAL_IMAGE_COUNT = 2;
@@ -34,6 +37,18 @@ let activeGeneration = null;
 
 const normalizeModel = (model) =>
   MODEL_ALIASES[model] || String(model || '').trim() || OPENAI_IMAGE_MODEL;
+function normalizedPrompt(value) {
+  return String(value || '')
+    .replace(/\u0000/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+}
+function promptLength(value) {
+  return Array.from(normalizedPrompt(value)).length;
+}
+function shouldUseImageStream(payload) {
+  return isOfficialOpenAiEndpoint(payload?.endpoint);
+}
 function formatUserError(value, fallback = '操作失败，请稍后重试') {
   const raw =
     typeof value === 'string'
@@ -257,11 +272,40 @@ async function sendOpenAiRequest(
   return { kind: 'response', response: httpResponse };
 }
 
+async function requestSingleImage(
+  payload,
+  model,
+  references,
+  signal,
+  event,
+  { stream },
+) {
+  const providerResult = await sendOpenAiRequest(
+    payload,
+    model,
+    references,
+    signal,
+    { count: 1, stream },
+  );
+  if (providerResult.kind === 'result') return providerResult.items?.[0];
+  if (stream) {
+    return consumeImageStream(providerResult.response, {
+      event,
+      batchIndex: 0,
+      total: 1,
+      outputFormat: requestedOutputFormat(payload),
+    });
+  }
+  const json = await responseJson(providerResult.response, 'image api');
+  return imagesOf(json)[0];
+}
+
 async function generateSingle(payload, event, signal) {
   if (!payload?.apiKey) return { ok: false, error: '请先填写 API Key' };
-  if (!payload.prompt?.trim()) return { ok: false, error: '请输入提示词' };
+  payload.prompt = normalizedPrompt(payload.prompt);
+  if (!payload.prompt) return { ok: false, error: '请输入提示词' };
   const model = normalizeModel(payload.model?.trim() || OPENAI_IMAGE_MODEL);
-  if (payload.prompt.length > DEFAULT_PROMPT_LIMIT) {
+  if (promptLength(payload.prompt) > DEFAULT_PROMPT_LIMIT) {
     return {
       ok: false,
       error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符`,
@@ -283,22 +327,39 @@ async function generateSingle(payload, event, signal) {
       message: '正在生成 1 张图片...',
     });
 
-    const providerResult = await sendOpenAiRequest(
-      payload,
-      model,
-      references,
-      signal,
-      { count: 1, stream: true },
-    );
-    const finalItem =
-      providerResult.kind === 'result'
-        ? providerResult.items?.[0]
-        : await consumeImageStream(providerResult.response, {
-            event,
-            batchIndex: 0,
-            total: 1,
-            outputFormat: requestedOutputFormat(payload),
-          });
+    const preferStream = shouldUseImageStream(payload);
+    let finalItem;
+    try {
+      finalItem = await requestSingleImage(
+        payload,
+        model,
+        references,
+        signal,
+        event,
+        {
+          stream: preferStream,
+        },
+      );
+    } catch (error) {
+      const cancelled = signal.aborted || /AbortError/i.test(error?.name || '');
+      if (cancelled || !preferStream) throw error;
+      report(event, {
+        phase: 'batch-start',
+        batchIndex: 0,
+        total: 1,
+        completed: 0,
+        partial: 0,
+        message: '流式响应不稳定，正在切换普通生成...',
+      });
+      finalItem = await requestSingleImage(
+        payload,
+        model,
+        references,
+        signal,
+        event,
+        { stream: false },
+      );
+    }
     if (!finalItem) throw new Error('provider returned no image');
     const saved = await saveGeneratedImages([finalItem], {
       key: payload.apiKey,
@@ -333,9 +394,10 @@ async function generateSingle(payload, event, signal) {
 
 async function generateBatch(payload, total, event, signal) {
   if (!payload?.apiKey) return { ok: false, error: '请先填写 API Key' };
-  if (!payload.prompt?.trim()) return { ok: false, error: '请输入提示词' };
+  payload.prompt = normalizedPrompt(payload.prompt);
+  if (!payload.prompt) return { ok: false, error: '请输入提示词' };
   const model = normalizeModel(payload.model?.trim() || OPENAI_IMAGE_MODEL);
-  if (payload.prompt.length > DEFAULT_PROMPT_LIMIT) {
+  if (promptLength(payload.prompt) > DEFAULT_PROMPT_LIMIT) {
     return {
       ok: false,
       error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符`,

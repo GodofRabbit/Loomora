@@ -1,7 +1,10 @@
 <script setup>
 import { CircleAlert, CircleCheck, X } from 'lucide-vue-next';
 
-defineProps({ toast: { type: Object, required: true } });
+defineProps({
+  toast: { type: Object, required: true },
+  elevated: Boolean,
+});
 defineEmits(['close']);
 </script>
 
@@ -10,7 +13,7 @@ defineEmits(['close']);
     <div
       v-if="toast"
       class="app-toast"
-      :class="'app-toast-' + toast.type"
+      :class="['app-toast-' + toast.type, { 'app-toast-elevated': elevated }]"
       role="status"
     >
       <span>
@@ -18,7 +21,12 @@ defineEmits(['close']);
         <CircleAlert v-else aria-hidden="true" />
       </span>
       <p>{{ toast.message }}</p>
-      <button title="关闭提示" aria-label="关闭提示" @click="$emit('close')">
+      <button
+        title="关闭提示"
+        aria-label="关闭提示"
+        @mousedown.prevent.stop
+        @click.stop="$emit('close')"
+      >
         <X aria-hidden="true" />
       </button>
     </div>

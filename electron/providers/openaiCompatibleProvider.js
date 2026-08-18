@@ -1,8 +1,14 @@
 const DEFAULT_ENDPOINT = 'https://api.openai.com';
 const PARTIAL_IMAGE_COUNT = 2;
 
+function sanitizeEndpoint(endpoint) {
+  return String(endpoint || '')
+    .trim()
+    .replace(/[\s,，、。]+$/u, '');
+}
+
 function endpointBase(endpoint) {
-  const value = String(endpoint || '').trim() || DEFAULT_ENDPOINT;
+  const value = sanitizeEndpoint(endpoint) || DEFAULT_ENDPOINT;
   const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
     ? value
     : `https://${value}`;
@@ -10,6 +16,18 @@ function endpointBase(endpoint) {
   const path = url.pathname.replace(/\/+$/, '');
   const normalizedPath = path && path !== '/' ? path : '/v1';
   return `${url.origin}${normalizedPath}`;
+}
+
+function isOfficialOpenAiEndpoint(endpoint) {
+  try {
+    const value = sanitizeEndpoint(endpoint) || DEFAULT_ENDPOINT;
+    const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
+      ? value
+      : `https://${value}`;
+    return new URL(withProtocol).hostname.toLowerCase() === 'api.openai.com';
+  } catch {
+    return false;
+  }
 }
 
 function requestHeaders(key, json = false) {
@@ -38,10 +56,17 @@ function requestedOutputFormat(payload) {
     : 'png';
 }
 
+function normalizedPrompt(value) {
+  return String(value || '')
+    .replace(/\u0000/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+}
+
 function generationBody(payload, { count = 1, stream = false } = {}) {
   return {
     model: String(payload.model || '').trim(),
-    prompt: String(payload.prompt || '').trim(),
+    prompt: normalizedPrompt(payload.prompt),
     size: requestedSize(payload),
     quality: requestedQuality(payload),
     output_format: requestedOutputFormat(payload),
@@ -156,4 +181,9 @@ const openAiCompatibleProvider = {
   },
 };
 
-module.exports = { openAiCompatibleProvider };
+module.exports = {
+  endpointBase,
+  isOfficialOpenAiEndpoint,
+  openAiCompatibleProvider,
+  sanitizeEndpoint,
+};

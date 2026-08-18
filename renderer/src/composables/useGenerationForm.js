@@ -77,7 +77,7 @@ function readProviderProfiles() {
         id: String(item.id),
         name: String(item.name || '未命名服务'),
         providerId: String(item.providerId || 'openai-compatible'),
-        endpoint: String(item.endpoint || ''),
+        endpoint: normalizeEndpoint(item.endpoint, ''),
         model: String(item.model || OPENAI_IMAGE_MODEL),
       }));
   } catch {
@@ -90,10 +90,31 @@ function persistProviderProfiles(profiles) {
 }
 
 function normalizeEndpoint(value, fallback = DEFAULT_ENDPOINT) {
-  const endpoint = String(value || '').trim();
+  const endpoint = String(value || '')
+    .trim()
+    .replace(/[\s,，、。]+$/u, '');
   return legacyOpenAiEndpointPattern.test(endpoint)
     ? OPENAI_API_BASE
     : endpoint || fallback;
+}
+
+function normalizePrompt(value) {
+  return String(value || '')
+    .replace(/\u0000/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+}
+
+function isOfficialOpenAiEndpoint(value) {
+  try {
+    const endpoint = normalizeEndpoint(value);
+    const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)
+      ? endpoint
+      : `https://${endpoint}`;
+    return new URL(withProtocol).hostname.toLowerCase() === 'api.openai.com';
+  } catch {
+    return false;
+  }
 }
 
 function readPastedImage(file) {
@@ -179,9 +200,22 @@ export function useGenerationForm({
         (item) => item.id === activeProfile.value?.providerId,
       ) || {},
   );
-  const providerCapabilities = computed(
-    () => activeProvider.value.capabilities || {},
-  );
+  const providerCapabilities = computed(() => {
+    const capabilities = activeProvider.value.capabilities || {};
+    const providerId =
+      activeProvider.value.id || activeProfile.value?.providerId;
+    if (
+      providerId === 'openai-compatible' &&
+      !isOfficialOpenAiEndpoint(endpoint.value)
+    ) {
+      return {
+        ...capabilities,
+        streaming: false,
+        partialPreview: false,
+      };
+    }
+    return capabilities;
+  });
 
   const normalizedModel = computed(() => {
     const value = model.value.trim();
@@ -200,7 +234,10 @@ export function useGenerationForm({
   const promptLimit = computed(
     () => promptLimits[normalizedModel.value] || DEFAULT_PROMPT_LIMIT,
   );
-  const counter = computed(() => `${prompt.value.length}/${promptLimit.value}`);
+  const counter = computed(
+    () =>
+      `${Array.from(normalizePrompt(prompt.value)).length}/${promptLimit.value}`,
+  );
   const maxReferences = computed(() =>
     providerCapabilities.value.references === false ? 0 : 16,
   );
@@ -772,7 +809,7 @@ export function useGenerationForm({
       ),
       profileId: String(overrides.profileId || activeProfileId.value),
       model: String(overrides.model || model.value),
-      prompt: String(overrides.prompt ?? prompt.value),
+      prompt: normalizePrompt(overrides.prompt ?? prompt.value),
       aspect: requestRatio,
       size: String(requestSize),
       quality: String(overrides.quality || quality.value || 'auto'),
@@ -837,7 +874,7 @@ export function useGenerationForm({
             'openai-compatible',
         ),
         profileId: String(turn.profileId || activeProfileId.value),
-        prompt: String(turn.prompt),
+        prompt: normalizePrompt(turn.prompt),
         aspect: historicalRatio,
         size:
           turn.resolution && turn.resolution !== 'auto'
@@ -1222,15 +1259,36 @@ export function useGenerationForm({
     }
   }
 
-  async function setQueueTaskStatus(id, statusValue, error = '') {
+  async function setQueueTaskStatus(
+    id,
+    statusValue,
+    error = '',
+    conversationId = '',
+  ) {
     const updated = await window.forge.updateGenerationQueueTask({
       id,
       status: statusValue,
       error,
+      conversationId,
     });
     const index = generationQueue.value.findIndex((item) => item.id === id);
     if (index >= 0) generationQueue.value[index] = updated;
     else generationQueue.value.push(updated);
+    return updated;
+  }
+
+  function ensureQueuedConversationTurn(request = {}) {
+    const total = Math.max(1, Number(request.count) || 1);
+    const reusableTurn = request.conversationId
+      ? conversationHistory.value.find(
+          (turn) => turn.id === request.conversationId,
+        )
+      : null;
+    const turn = reusableTurn
+      ? reuseConversationTurn(reusableTurn, total, request)
+      : createConversationTurn(total, request);
+    request.conversationId = turn.id;
+    return turn;
   }
 
   async function processGenerationQueue() {
@@ -1248,7 +1306,6 @@ export function useGenerationForm({
       );
       while (nextTask && !queuePaused.value) {
         activeQueueTaskId.value = nextTask.id;
-        await setQueueTaskStatus(nextTask.id, 'running');
         let succeeded = false;
         let taskError = '';
         try {
@@ -1274,8 +1331,11 @@ export function useGenerationForm({
             );
             continue;
           }
+          const turn = ensureQueuedConversationTurn(task.request);
+          await setQueueTaskStatus(nextTask.id, 'running', '', turn.id);
           succeeded = await executeQueuedGeneration({
             ...task.request,
+            conversationId: turn.id,
             apiKey: taskApiKey,
           });
           if (!succeeded) taskError = status.value || '图片生成失败';

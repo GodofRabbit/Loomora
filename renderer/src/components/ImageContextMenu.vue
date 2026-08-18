@@ -8,8 +8,8 @@ import {
   ImagePlus,
   MessageSquareText,
   Pencil,
-  RefreshCw,
   ScanText,
+  Sparkles,
   TextCursorInput,
   Trash2,
 } from 'lucide-vue-next';
@@ -38,9 +38,8 @@ defineEmits([
     @click.stop
   >
     <button @click="$emit('copy')"><Copy aria-hidden="true" />复制</button>
-    <button v-if="menu.filePath" @click="$emit('favorite')">
-      <Heart :class="{ active: menu.favorite }" aria-hidden="true" />
-      {{ menu.favorite ? '取消收藏' : '收藏图片' }}
+    <button v-if="menu.editable" @click="$emit('edit')">
+      <Pencil aria-hidden="true" />编辑
     </button>
     <button v-if="menu.filePath" @click="$emit('prompt')">
       <MessageSquareText aria-hidden="true" />查看提示词
@@ -52,7 +51,7 @@ defineEmits([
       <ImagePlus aria-hidden="true" />作为参考图创作
     </button>
     <button v-if="menu.regeneratable" @click="$emit('regenerate')">
-      <RefreshCw aria-hidden="true" />重新生成
+      <Sparkles aria-hidden="true" />重新创作
     </button>
     <button @click="$emit('download')">
       <Download aria-hidden="true" />下载
@@ -60,8 +59,9 @@ defineEmits([
     <button @click="$emit('recognize')">
       <ScanText aria-hidden="true" />识别文字
     </button>
-    <button v-if="menu.editable" @click="$emit('edit')">
-      <Pencil aria-hidden="true" />编辑
+    <button v-if="menu.filePath" @click="$emit('favorite')">
+      <Heart :class="{ active: menu.favorite }" aria-hidden="true" />
+      {{ menu.favorite ? '取消收藏' : '收藏' }}
     </button>
     <button v-if="menu.filePath" @click="$emit('rename')">
       <TextCursorInput aria-hidden="true" />重命名

@@ -135,6 +135,7 @@ const galleryStickyStuck = ref(false);
 const suppressConversationScroll = ref(false);
 const conversationScrolledAway = ref(false);
 const conversationLoadDirection = ref('');
+const highlightedConversationId = ref('');
 const galleryViewport = ref({ top: 0, bottom: 900 });
 const galleryColumnWidth = ref(280);
 const galleryMeasurementVersion = ref(0);
@@ -143,6 +144,7 @@ const galleryCardElements = new Map();
 let suppressConversationTimer;
 let scrollSettleTimer;
 let pageRestoreTimer;
+let targetedConversationTimer;
 let pageLoadFrame;
 let followBottomFrame;
 let externalRestoreFrame;
@@ -549,6 +551,14 @@ function restoreConversationAnchor(element, anchor) {
   return true;
 }
 
+function conversationNodeById(element, turnId) {
+  const targetId = String(turnId || '');
+  if (!targetId) return null;
+  return Array.from(element.querySelectorAll('[data-conversation-id]')).find(
+    (node) => node.dataset.conversationId === targetId,
+  );
+}
+
 function captureConversationScrollSnapshot() {
   const element = generationChat.value;
   if (!element || props.view !== 'create') return null;
@@ -599,9 +609,52 @@ function restoreConversationScrollSnapshot(snapshot, options = {}) {
   });
 }
 
+function scrollToConversationTurn(turnId, options = {}) {
+  const element = generationChat.value;
+  if (!element || props.view !== 'create' || !props.active) return false;
+  const node = conversationNodeById(element, turnId);
+  if (!node) return false;
+
+  clearScrollSettleTimers();
+  suppressConversationScroll.value = true;
+  const rootRect = element.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  const targetTop =
+    element.scrollTop +
+    nodeRect.top -
+    rootRect.top -
+    Math.max(16, (element.clientHeight - nodeRect.height) * 0.2);
+
+  element.scrollTo({
+    top: Math.max(0, targetTop),
+    behavior: options.smooth === false ? 'auto' : 'smooth',
+  });
+
+  if (options.highlight !== false) {
+    highlightedConversationId.value = String(turnId || '');
+    window.clearTimeout(targetedConversationTimer);
+    targetedConversationTimer = window.setTimeout(() => {
+      if (highlightedConversationId.value === String(turnId || '')) {
+        highlightedConversationId.value = '';
+      }
+    }, 1800);
+  }
+
+  scrollSettleTimer = window.setTimeout(
+    () => {
+      lastConversationScrollTop = element.scrollTop;
+      suppressConversationScroll.value = false;
+      setConversationAwayFromBottom(measureConversationAwayFromBottom());
+    },
+    options.smooth === false ? 120 : 720,
+  );
+  return true;
+}
+
 defineExpose({
   captureConversationScrollSnapshot,
   restoreConversationScrollSnapshot,
+  scrollToConversationTurn,
 });
 
 function clearScrollSettleTimers() {
@@ -966,6 +1019,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearScrollSettleTimers();
+  window.clearTimeout(targetedConversationTimer);
   window.cancelAnimationFrame(externalRestoreFrame);
   galleryCardObserver?.disconnect();
   galleryCardElements.clear();
@@ -1291,7 +1345,11 @@ onBeforeUnmount(() => {
             :key="turn.id"
             :data-conversation-id="turn.id"
             class="generation-chat-turn"
-            :class="[`status-${turn.status}`, `mode-${turn.mode}`]"
+            :class="[
+              `status-${turn.status}`,
+              `mode-${turn.mode}`,
+              { 'is-targeted': highlightedConversationId === turn.id },
+            ]"
           >
             <div class="generation-chat-message user">
               <div class="generation-chat-bubble generation-chat-user-bubble">

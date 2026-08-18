@@ -148,16 +148,21 @@ function hydratedTask(id) {
   };
 }
 
-function updateTask(id, status, error = '') {
+function updateTask(id, status, error = '', conversationId = '') {
   if (!VALID_STATUSES.has(status)) throw new Error('队列状态无效');
   const tasks = readQueue();
   const index = tasks.findIndex((task) => task.id === id);
   if (index < 0) throw new Error('生成队列任务不存在');
+  const nextConversationId = String(conversationId || '').trim();
   tasks[index] = {
     ...tasks[index],
     status,
     error: String(error || ''),
     updatedAt: Date.now(),
+    request: {
+      ...(tasks[index].request || {}),
+      ...(nextConversationId ? { conversationId: nextConversationId } : {}),
+    },
   };
   if (status === 'done') {
     removeReferences(id);
@@ -206,6 +211,7 @@ function registerGenerationQueueHandlers() {
       String(payload?.id || ''),
       String(payload?.status || ''),
       payload?.error,
+      payload?.conversationId,
     ),
   );
   ipcMain.handle('remove-generation-queue-task', (_event, id) =>

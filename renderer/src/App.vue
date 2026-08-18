@@ -417,6 +417,37 @@ function scrollConversationToBottom() {
   conversationScrollBottomSignal.value += 1;
 }
 
+async function locateGenerationQueueTask(task) {
+  const conversationId = String(task?.conversationId || '').trim();
+  if (!conversationId) return;
+  const alreadyOnCreate = view.value === 'create';
+  if (!alreadyOnCreate) view.value = 'create';
+  creationHistoryVisible.value = true;
+  conversationAwayFromBottom.value = true;
+  await nextTick();
+
+  const locate = () =>
+    creationGallery.value?.scrollToConversationTurn?.(conversationId, {
+      smooth: true,
+      highlight: true,
+    });
+
+  window.requestAnimationFrame(async () => {
+    if (locate()) return;
+    if (conversationOffset.value !== 0) {
+      await loadLatestConversations();
+      await nextTick();
+      window.requestAnimationFrame(() => {
+        if (!locate()) {
+          showCreationToast('未找到这条生成对话，请稍后再试', 'error');
+        }
+      });
+      return;
+    }
+    showCreationToast('未找到这条生成对话，请稍后再试', 'error');
+  });
+}
+
 function startScrollDrag(event) {
   const element = scrollContainer.value;
   const startY = event.clientY;
@@ -954,6 +985,18 @@ function closePromptDetails() {
   promptDetailsDrawer.value = null;
 }
 
+function toggleCurrentPromptDetails() {
+  const item = currentPreview.value;
+  if (!item) return;
+  const currentPath = String(item.filePath || item.path || '');
+  const openPath = String(promptDetailsDrawer.value?.details?.filePath || '');
+  if (promptDetailsDrawer.value && currentPath && openPath === currentPath) {
+    closePromptDetails();
+    return;
+  }
+  openImagePrompt(item);
+}
+
 function promptDetailsFromItem(item = {}, metadata = {}) {
   const filePath = String(item.path || item.filePath || metadata.path || '');
   return {
@@ -966,6 +1009,19 @@ function promptDetailsFromItem(item = {}, metadata = {}) {
     resolution: metadata.resolution || item.resolution || '',
     quality: metadata.quality || item.quality || '',
     outputFormat: metadata.outputFormat || item.outputFormat || '',
+    referenceCount: Number(metadata.referenceCount || item.referenceCount) || 0,
+    referencePaths:
+      Array.isArray(metadata.referencePaths) && metadata.referencePaths.length
+        ? metadata.referencePaths
+        : Array.isArray(item.referencePaths)
+          ? item.referencePaths
+          : [],
+    referenceNames:
+      Array.isArray(metadata.referenceNames) && metadata.referenceNames.length
+        ? metadata.referenceNames
+        : Array.isArray(item.referenceNames)
+          ? item.referenceNames
+          : [],
     createdAt: metadata.createdAt || item.createdAt || 0,
     source: metadata.source || item.source || (filePath ? 'manual' : ''),
     tag: item.tag || '',
@@ -1151,11 +1207,16 @@ async function openImagePrompt(item = {}) {
   };
   try {
     let metadata;
+    const turn =
+      item.generationTurn || (await findGenerationTurnByImage(filePath));
     if (window.forge?.getGalleryImageMetadata) {
-      metadata = await window.forge.getGalleryImageMetadata(filePath);
+      metadata = {
+        ...(turn
+          ? { ...turn, source: 'generated', conversationId: turn.id }
+          : {}),
+        ...(await window.forge.getGalleryImageMetadata(filePath)),
+      };
     } else {
-      const turn =
-        item.generationTurn || (await findGenerationTurnByImage(filePath));
       metadata = turn
         ? { ...turn, source: 'generated', conversationId: turn.id }
         : {};
@@ -1194,8 +1255,20 @@ async function copyImagePrompt() {
   }
 }
 
-async function useImagePrompt() {
-  const details = promptDetailsDrawer.value?.details;
+async function openPromptDetailsLocation() {
+  const filePath = String(promptDetailsDrawer.value?.details?.filePath || '');
+  if (!filePath) return;
+  try {
+    await window.forge.showImageInFolder(filePath);
+  } catch (error) {
+    showToast(
+      formatUserMessage(error, '无法打开文件所在位置，请稍后重试'),
+      'error',
+    );
+  }
+}
+
+async function applyImagePromptForCreation(details) {
   if (!details?.prompt) return;
   prompt.value = details.prompt;
   if (details.model) model.value = details.model;
@@ -1204,11 +1277,17 @@ async function useImagePrompt() {
   if (details.quality) quality.value = details.quality;
   if (details.outputFormat) outputFormat.value = details.outputFormat;
   count.value = 1;
+  const restoredReferences = await loadConversationReferences(details);
+  reference.value = restoredReferences.slice(0, maxReferences.value);
   closePromptDetails();
   closePreview();
   await openCreateComposerExpanded();
   creationStatus.value = '已填入图片提示词，可继续调整后生成';
   showCreationToast(creationStatus.value);
+}
+
+async function useImagePrompt() {
+  await applyImagePromptForCreation(promptDetailsDrawer.value?.details);
 }
 
 function openImageVersionCompare() {
@@ -1474,14 +1553,15 @@ async function useConversationImageAsReference(turn) {
 
 async function regenerateContextImage() {
   if (!contextMenu.value?.generationTurn) return;
-  const turn = contextMenu.value.generationTurn;
+  const item = contextMenu.value;
+  const turn = item.generationTurn;
   contextMenu.value = null;
-  view.value = 'create';
-  creationHistoryVisible.value = true;
-  await regenerateFromConversation(turn, {
-    count: 1,
-    onStart: showRegenerationWait,
+  const details = promptDetailsFromItem(item, {
+    ...turn,
+    source: 'generated',
+    conversationId: turn.id,
   });
+  await applyImagePromptForCreation(details);
 }
 
 async function regenerateConversationTurn(turn) {
@@ -1489,19 +1569,20 @@ async function regenerateConversationTurn(turn) {
   view.value = 'create';
   creationHistoryVisible.value = true;
   await regenerateFromConversation(turn, {
-    onStart: showRegenerationWait,
+    onStart: () => showRegenerationWait({ scrollBottom: false }),
     reuseTurn: true,
   });
 }
 
-function showRegenerationWait() {
-  conversationAwayFromBottom.value = false;
+function showRegenerationWait({ scrollBottom = false } = {}) {
   composerCollapseRequested = true;
   composerCollapseLockUntil = Date.now() + 820;
   composerCollapseSignal.value += 1;
-  nextTick(() => {
-    conversationScrollBottomSignal.value += 1;
-  });
+  if (scrollBottom) {
+    nextTick(() => {
+      conversationScrollBottomSignal.value += 1;
+    });
+  }
 }
 
 function showCreationHistory() {
@@ -2273,7 +2354,7 @@ function handleConfiguredShortcut(event) {
   else if (action === 'favorite' && currentPreview.value?.filePath) {
     toggleGalleryFavorite(currentPreview.value);
   } else if (action === 'viewPrompt' && currentPreview.value) {
-    openImagePrompt(currentPreview.value);
+    toggleCurrentPromptDetails();
   } else if (action === 'copyPrompt' && currentPreview.value) {
     copyCurrentImagePrompt();
   } else if (action === 'deleteImage' && currentPreview.value) {
@@ -2873,6 +2954,7 @@ onBeforeUnmount(() => {
       @use="useImagePrompt"
       @save="saveImageMetadata"
       @compare="openImageVersionCompare"
+      @open-location="openPromptDetailsLocation"
     />
     <ImageCompareModal
       :open="Boolean(imageCompare)"
@@ -2925,7 +3007,7 @@ onBeforeUnmount(() => {
       @finish="finishOnboarding"
     />
     <GenerationQueuePanel
-      v-if="view === 'create'"
+      v-if="view === 'create' || generationQueue.length"
       :tasks="generationQueue"
       :paused="queuePaused"
       :active-task-id="activeQueueTaskId"
@@ -2933,10 +3015,12 @@ onBeforeUnmount(() => {
       @retry="form.retryGenerationTask"
       @remove="form.removeGenerationTask"
       @clear-finished="form.clearFinishedGenerationTasks"
+      @locate="locateGenerationQueueTask"
     />
     <ToastMessage
       v-if="toast && toast.view === view"
       :toast="toast"
+      :elevated="view === 'create' && !createStartMode"
       @close="toast = null"
     />
   </div>

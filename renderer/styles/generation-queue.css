@@ -1,3 +1,9 @@
+.generation-queue-shell {
+  position: fixed;
+  z-index: 91;
+  right: 0;
+  bottom: 0;
+}
 .generation-queue-trigger {
   position: fixed;
   z-index: 91;
@@ -51,6 +57,7 @@
   background: rgba(14, 12, 24, 0.97);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.52);
   backdrop-filter: blur(18px);
+  transform-origin: right bottom;
 }
 .generation-queue-panel header {
   display: flex;
@@ -120,6 +127,21 @@
   padding: 11px;
   gap: 6px;
   border-bottom: 1px solid rgba(181, 142, 255, 0.1);
+  border-radius: 8px;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+.generation-queue-list article.locatable {
+  cursor: pointer;
+}
+.generation-queue-list article.locatable:hover,
+.generation-queue-list article.locatable:focus-visible {
+  border-color: rgba(181, 142, 255, 0.24);
+  background: rgba(91, 58, 139, 0.22);
+  outline: none;
+  transform: translateY(-1px);
 }
 .generation-queue-list article.running {
   border-left: 2px solid #ac79ef;
@@ -131,11 +153,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
 }
 .generation-queue-item-head span {
   color: #c9b3e7;
   font-size: 11px;
   font-weight: 800;
+}
+.generation-queue-item-head small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.generation-queue-item-head small svg {
+  width: 12px;
+  height: 12px;
+  color: #b98fff;
 }
 .generation-queue-list p {
   margin: 0;
@@ -180,11 +213,11 @@
 .generation-queue-enter-active,
 .generation-queue-leave-active {
   transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
+    opacity 0.2s ease,
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .generation-queue-enter-from,
 .generation-queue-leave-to {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(12px) scale(0.96);
 }

@@ -441,8 +441,52 @@
 }
 
 .prompt-details-metadata dd {
+  min-width: 0;
   color: #c9c0d1;
   overflow-wrap: anywhere;
+}
+
+.prompt-details-path-button {
+  display: inline-flex;
+  width: 100%;
+  max-width: 100%;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(158, 112, 224, 0.12);
+  color: #e7dcff;
+  font: inherit;
+  line-height: 1.55;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.prompt-details-path-button svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #b68cf4;
+}
+
+.prompt-details-path-button span {
+  min-width: 0;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.prompt-details-path-button:hover {
+  background: rgba(174, 128, 245, 0.18);
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 .prompt-details-state {
