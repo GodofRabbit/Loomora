@@ -49,8 +49,39 @@ const ratioLabels = {
 const legacyOpenAiEndpointPattern = /^https:\/\/api\.openai\.com\/v1\/?$/i;
 const CONVERSATION_PAGE_SIZE = 10;
 const CONVERSATION_WINDOW_SIZE = CONVERSATION_PAGE_SIZE * 3;
-const PROVIDER_PROFILES_STORAGE = 'loomora-provider-profiles-v1';
-const ACTIVE_PROVIDER_PROFILE_STORAGE = 'loomora-active-provider-profile-v1';
+const PROVIDER_PROFILES_STORAGE = 'loomora-provider-profiles';
+const ACTIVE_PROVIDER_PROFILE_STORAGE = 'loomora-active-provider-profile';
+const LEGACY_STORAGE_KEYS = {
+  endpoint: 'loomora-endpoint-v2',
+  providerProfiles: 'loomora-provider-profiles-v1',
+  activeProviderProfile: 'loomora-active-provider-profile-v1',
+};
+
+function migrateStorageKeys() {
+  try {
+    const migrations = [
+      [LEGACY_STORAGE_KEYS.endpoint, ENDPOINT_STORAGE],
+      [LEGACY_STORAGE_KEYS.providerProfiles, PROVIDER_PROFILES_STORAGE],
+      [
+        LEGACY_STORAGE_KEYS.activeProviderProfile,
+        ACTIVE_PROVIDER_PROFILE_STORAGE,
+      ],
+    ];
+    for (const [legacyKey, currentKey] of migrations) {
+      const legacyValue = localStorage.getItem(legacyKey);
+      if (legacyValue !== null) {
+        if (localStorage.getItem(currentKey) === null) {
+          localStorage.setItem(currentKey, legacyValue);
+        }
+        localStorage.removeItem(legacyKey);
+      }
+    }
+  } catch {
+    // Storage may be unavailable in restricted browser contexts; defaults still work.
+  }
+}
+
+migrateStorageKeys();
 
 function createDefaultProviderProfile() {
   const storedEndpoint = localStorage.getItem(ENDPOINT_STORAGE);
@@ -103,18 +134,6 @@ function normalizePrompt(value) {
     .replace(/\u0000/g, '')
     .replace(/\r\n?/g, '\n')
     .trim();
-}
-
-function isOfficialOpenAiEndpoint(value) {
-  try {
-    const endpoint = normalizeEndpoint(value);
-    const withProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)
-      ? endpoint
-      : `https://${endpoint}`;
-    return new URL(withProtocol).hostname.toLowerCase() === 'api.openai.com';
-  } catch {
-    return false;
-  }
 }
 
 function readPastedImage(file) {
@@ -191,8 +210,11 @@ export function useGenerationForm({
   const providerOptions = ref([
     { id: 'openai-compatible', label: 'OpenAI 兼容接口' },
   ]);
+  const resolvedProviderCapabilities = ref(null);
   const settingsApiKey = ref(apiKey.value);
   const activeConversationId = ref('');
+  let profileHydrationVersion = 0;
+  let capabilityRequestVersion = 0;
 
   const activeProvider = computed(
     () =>
@@ -201,46 +223,49 @@ export function useGenerationForm({
       ) || {},
   );
   const providerCapabilities = computed(() => {
-    const capabilities = activeProvider.value.capabilities || {};
-    const providerId =
-      activeProvider.value.id || activeProfile.value?.providerId;
-    if (
-      providerId === 'openai-compatible' &&
-      !isOfficialOpenAiEndpoint(endpoint.value)
-    ) {
-      return {
-        ...capabilities,
-        streaming: false,
-        partialPreview: false,
-      };
-    }
-    return capabilities;
+    return (
+      resolvedProviderCapabilities.value ||
+      activeProvider.value.capabilities ||
+      {}
+    );
   });
 
   const normalizedModel = computed(() => {
     const value = model.value.trim();
     return modelAliases[value] || value;
   });
-  const modelIsGpt = computed(
-    () => normalizedModel.value === OPENAI_IMAGE_MODEL,
-  );
-  const modelIsGemini = computed(() => false);
-  const ratioOptions = computed(() =>
-    gptRatios.map((value) => ({ value, label: ratioLabels[value] || value })),
-  );
-  const resolutionOptions = computed(() =>
-    gptSizes.map((item) => ({ ...item })),
-  );
+  const ratioOptions = computed(() => {
+    const supported = Array.isArray(providerCapabilities.value.supportedAspects)
+      ? providerCapabilities.value.supportedAspects
+      : gptRatios;
+    return supported.map((value) => ({
+      value,
+      label: ratioLabels[value] || value,
+    }));
+  });
+  const resolutionOptions = computed(() => {
+    const supported = providerCapabilities.value.supportedSizes;
+    if (!Array.isArray(supported) || !supported.length) {
+      return gptSizes.map((item) => ({ ...item }));
+    }
+    return supported.map((item) =>
+      typeof item === 'string' ? { value: item, label: item } : { ...item },
+    );
+  });
   const promptLimit = computed(
-    () => promptLimits[normalizedModel.value] || DEFAULT_PROMPT_LIMIT,
+    () =>
+      Number(providerCapabilities.value.promptLimit) ||
+      promptLimits[normalizedModel.value] ||
+      DEFAULT_PROMPT_LIMIT,
   );
   const counter = computed(
     () =>
       `${Array.from(normalizePrompt(prompt.value)).length}/${promptLimit.value}`,
   );
-  const maxReferences = computed(() =>
-    providerCapabilities.value.references === false ? 0 : 16,
-  );
+  const maxReferences = computed(() => {
+    if (providerCapabilities.value.references === false) return 0;
+    return Math.max(0, Number(providerCapabilities.value.maxReferences) || 16);
+  });
   const currentModelOptions = computed(() => {
     const current = normalizedModel.value;
     return current && !modelOptions.some((item) => item.value === current)
@@ -248,12 +273,16 @@ export function useGenerationForm({
       : modelOptions;
   });
   const maxCount = computed(() => {
-    if (activeProvider.value.capabilities?.batch === false) return 1;
-    return (
-      currentModelOptions.value.find(
-        (option) => option.value === normalizedModel.value,
-      )?.maxCount || 1
+    const providerLimit = Math.max(
+      1,
+      Number(providerCapabilities.value.maxCount) || 1,
     );
+    const knownModel = modelOptions.find(
+      (option) => option.value === normalizedModel.value,
+    );
+    return knownModel
+      ? Math.min(providerLimit, knownModel.maxCount || providerLimit)
+      : providerLimit;
   });
   const conversationHasOlder = computed(
     () =>
@@ -273,6 +302,43 @@ export function useGenerationForm({
       status.value = `${normalizedModel.value} 最多支持 ${maxReferences.value} 张参考图`;
     }
   });
+
+  async function refreshProviderCapabilities() {
+    const providerId =
+      activeProfile.value?.providerId || activeProvider.value.id;
+    const requestedEndpoint = endpoint.value;
+    const requestedModel = model.value;
+    const requestVersion = ++capabilityRequestVersion;
+    if (!providerId || !window.forge?.describeGenerationProvider) {
+      resolvedProviderCapabilities.value = null;
+      return;
+    }
+    try {
+      const description = await window.forge.describeGenerationProvider({
+        providerId,
+        endpoint: requestedEndpoint,
+        model: requestedModel,
+      });
+      if (
+        requestVersion !== capabilityRequestVersion ||
+        providerId !== activeProfile.value?.providerId ||
+        requestedEndpoint !== endpoint.value ||
+        requestedModel !== model.value
+      ) {
+        return;
+      }
+      resolvedProviderCapabilities.value = description?.capabilities || null;
+      count.value = Math.min(count.value, maxCount.value);
+    } catch {
+      resolvedProviderCapabilities.value = null;
+    }
+  }
+
+  watch(
+    [() => activeProfile.value?.providerId, endpoint, model],
+    refreshProviderCapabilities,
+    { immediate: true },
+  );
 
   function resetGenerationState() {
     images.value = [];
@@ -302,6 +368,9 @@ export function useGenerationForm({
       model: request.model,
       providerId: request.providerId || 'openai-compatible',
       profileId: request.profileId || activeProfileId.value,
+      originModel: request.model,
+      originProviderId: request.providerId || 'openai-compatible',
+      originProfileId: request.profileId || activeProfileId.value,
       ratio: request.aspect,
       resolution: request.size,
       quality: request.quality,
@@ -354,6 +423,9 @@ export function useGenerationForm({
       model: request.model,
       providerId: request.providerId || 'openai-compatible',
       profileId: request.profileId || activeProfileId.value,
+      originModel: target.originModel || target.model,
+      originProviderId: target.originProviderId || target.providerId,
+      originProfileId: target.originProfileId || target.profileId,
       ratio: request.aspect,
       resolution: request.size,
       quality: request.quality,
@@ -423,6 +495,13 @@ export function useGenerationForm({
       model: String(turn.model || normalizedModel.value),
       providerId: String(turn.providerId || 'openai-compatible'),
       profileId: String(turn.profileId || 'openai-main'),
+      originModel: String(turn.originModel || turn.model || ''),
+      originProviderId: String(
+        turn.originProviderId || turn.providerId || 'openai-compatible',
+      ),
+      originProfileId: String(
+        turn.originProfileId || turn.profileId || 'openai-main',
+      ),
       ratio: String(turn.ratio || '1:1'),
       resolution: String(turn.resolution || '1024x1024'),
       quality: String(turn.quality || 'auto'),
@@ -499,6 +578,13 @@ export function useGenerationForm({
       model: String(turn.model || ''),
       providerId: String(turn.providerId || 'openai-compatible'),
       profileId: String(turn.profileId || 'openai-main'),
+      originModel: String(turn.originModel || turn.model || ''),
+      originProviderId: String(
+        turn.originProviderId || turn.providerId || 'openai-compatible',
+      ),
+      originProfileId: String(
+        turn.originProfileId || turn.profileId || 'openai-main',
+      ),
       ratio: String(turn.ratio || ''),
       resolution: String(turn.resolution || ''),
       quality: String(turn.quality || ''),
@@ -821,6 +907,10 @@ export function useGenerationForm({
         Math.max(1, Number(overrides.count ?? count.value) || 1),
       ),
       reference: requestReference.map(({ name, data }) => ({ name, data })),
+      options:
+        overrides.options && typeof overrides.options === 'object'
+          ? { ...overrides.options }
+          : {},
     };
   }
 
@@ -867,13 +957,6 @@ export function useGenerationForm({
       onStart: options.onStart,
       reuseTurn: options.reuseTurn ? turn : null,
       request: {
-        model: String(turn.model || model.value),
-        providerId: String(
-          turn.providerId ||
-            activeProfile.value?.providerId ||
-            'openai-compatible',
-        ),
-        profileId: String(turn.profileId || activeProfileId.value),
         prompt: normalizePrompt(turn.prompt),
         aspect: historicalRatio,
         size:
@@ -947,6 +1030,9 @@ export function useGenerationForm({
     activeProfileId.value = next.id;
     endpoint.value = next.endpoint;
     model.value = next.model || OPENAI_IMAGE_MODEL;
+    apiKey.value = '';
+    settingsApiKey.value = '';
+    resolvedProviderCapabilities.value = null;
     settingsProfileId.value = next.id;
     settingsProfileName.value = next.name;
     settingsProviderId.value = next.providerId;
@@ -987,10 +1073,12 @@ export function useGenerationForm({
     profileId = activeProfileId.value,
     { migrateLegacy = true } = {},
   ) {
+    const hydrationVersion = ++profileHydrationVersion;
     const legacyApiKey = localStorage.getItem(API_KEY_STORAGE) || '';
     try {
       if (window.forge?.listGenerationProviders) {
         providerOptions.value = await window.forge.listGenerationProviders();
+        await refreshProviderCapabilities();
       }
       if (migrateLegacy && legacyApiKey && window.forge?.setSecureApiKey) {
         await window.forge.setSecureApiKey('openai-main', legacyApiKey);
@@ -999,6 +1087,7 @@ export function useGenerationForm({
       apiKey.value = window.forge?.getSecureApiKey
         ? await window.forge.getSecureApiKey(profileId)
         : '';
+      if (hydrationVersion !== profileHydrationVersion) return;
       settingsApiKey.value = apiKey.value;
       await loadGenerationQueue();
       processGenerationQueue();
@@ -1100,6 +1189,9 @@ export function useGenerationForm({
     localStorage.removeItem(API_KEY_STORAGE);
     localStorage.removeItem(PROVIDER_PROFILES_STORAGE);
     localStorage.removeItem(ACTIVE_PROVIDER_PROFILE_STORAGE);
+    localStorage.removeItem(LEGACY_STORAGE_KEYS.endpoint);
+    localStorage.removeItem(LEGACY_STORAGE_KEYS.providerProfiles);
+    localStorage.removeItem(LEGACY_STORAGE_KEYS.activeProviderProfile);
     providerProfiles.value = [createDefaultProviderProfile()];
     activeProfileId.value = providerProfiles.value[0].id;
     endpoint.value = DEFAULT_ENDPOINT;
@@ -1310,7 +1402,18 @@ export function useGenerationForm({
         let taskError = '';
         try {
           const task = await window.forge.getGenerationQueueTask(nextTask.id);
-          if (!String(task.request?.endpoint || '').trim()) {
+          const taskProvider = window.forge?.describeGenerationProvider
+            ? await window.forge.describeGenerationProvider({
+                providerId: task.request?.providerId,
+                endpoint: task.request?.endpoint,
+                model: task.request?.model,
+              })
+            : null;
+          const taskCapabilities = taskProvider?.capabilities || {};
+          if (
+            taskCapabilities.requiresEndpoint !== false &&
+            !String(task.request?.endpoint || '').trim()
+          ) {
             taskError = '请先填写接口地址';
             await setQueueTaskStatus(nextTask.id, 'failed', taskError);
             activeQueueTaskId.value = '';
@@ -1322,7 +1425,10 @@ export function useGenerationForm({
           const taskApiKey = window.forge?.getSecureApiKey
             ? await window.forge.getSecureApiKey(task.request?.profileId)
             : apiKey.value;
-          if (!taskApiKey?.trim()) {
+          if (
+            taskCapabilities.requiresApiKey !== false &&
+            !taskApiKey?.trim()
+          ) {
             taskError = '请先配置当前服务的 API Key';
             await setQueueTaskStatus(nextTask.id, 'failed', taskError);
             activeQueueTaskId.value = '';
@@ -1370,8 +1476,18 @@ export function useGenerationForm({
       return;
     }
     const missingConfiguration = [];
-    if (!request.endpoint.trim()) missingConfiguration.push('接口地址');
-    if (!request.apiKey.trim()) missingConfiguration.push('API Key');
+    if (
+      providerCapabilities.value.requiresEndpoint !== false &&
+      !request.endpoint.trim()
+    ) {
+      missingConfiguration.push('接口地址');
+    }
+    if (
+      providerCapabilities.value.requiresApiKey !== false &&
+      !request.apiKey.trim()
+    ) {
+      missingConfiguration.push('API Key');
+    }
     if (missingConfiguration.length) {
       status.value = `请先配置${missingConfiguration.join('和')}`;
       showToast(status.value, 'error');
@@ -1416,7 +1532,18 @@ export function useGenerationForm({
 
   async function retryGenerationTask(task) {
     if (!task?.id || task.status !== 'failed') return;
-    await setQueueTaskStatus(task.id, 'pending');
+    const updated = await window.forge.retryGenerationQueueTask({
+      id: task.id,
+      providerId:
+        activeProfile.value?.providerId || activeProvider.value.id || '',
+      profileId: activeProfileId.value,
+      endpoint: endpoint.value,
+      model: model.value,
+    });
+    const index = generationQueue.value.findIndex(
+      (item) => item.id === task.id,
+    );
+    if (index >= 0) generationQueue.value[index] = updated;
     processGenerationQueue();
   }
 
@@ -1472,8 +1599,6 @@ export function useGenerationForm({
     settingsModel,
     providerOptions,
     providerCapabilities,
-    modelIsGpt,
-    modelIsGemini,
     ratioOptions,
     resolutionOptions,
     qualityOptions: qualityOptionsValue,

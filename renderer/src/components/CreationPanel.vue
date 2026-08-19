@@ -30,8 +30,6 @@ const props = defineProps({
   maxReferences: { type: Number, required: true },
   maxCount: { type: Number, required: true },
   count: { type: Number, required: true },
-  modelIsGpt: Boolean,
-  modelIsGemini: Boolean,
   providerCapabilities: { type: Object, default: () => ({}) },
   busy: Boolean,
   startMode: Boolean,
@@ -208,7 +206,7 @@ watch(
           aria-label="选择图片生成模型"
           @update:model-value="emit('update:model', $event)"
       /></label>
-      <label class="ratio-control"
+      <label v-if="providerCapabilities.aspect !== false" class="ratio-control"
         ><span>画面比例</span
         ><DropdownSelect
           :model-value="ratio"
@@ -227,10 +225,7 @@ watch(
           @update:model-value="emit('update:resolution', $event)"
       /></label>
       <label
-        v-if="
-          providerCapabilities.quality !== false &&
-          (modelIsGpt || modelIsGemini)
-        "
+        v-if="providerCapabilities.quality !== false"
         class="quality-control"
         ><span>质量</span
         ><DropdownSelect
@@ -239,7 +234,10 @@ watch(
           aria-label="选择图片质量"
           @update:model-value="emit('update:quality', $event)"
       /></label>
-      <label class="output-format-control">
+      <label
+        v-if="providerCapabilities.outputFormat !== false"
+        class="output-format-control"
+      >
         <span>输出格式</span>
         <DropdownSelect
           :model-value="outputFormat"

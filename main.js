@@ -10,7 +10,11 @@ const {
   saveConversationTurn,
 } = require('./electron/gallery');
 const { registerGenerationHandler } = require('./electron/generation');
-const { getProvider, listProviders } = require('./electron/providers');
+const {
+  describeProvider,
+  getProvider,
+  listProviders,
+} = require('./electron/providers');
 const {
   registerGenerationQueueHandlers,
 } = require('./electron/generationQueue');
@@ -101,6 +105,19 @@ registerBackupHandlers({
 });
 registerGenerationHandler();
 ipcMain.handle('list-generation-providers', () => listProviders());
+ipcMain.handle('describe-generation-provider', (_event, payload) => {
+  const description = describeProvider(payload?.providerId, {
+    endpoint: String(payload?.endpoint || ''),
+    model: String(payload?.model || ''),
+  });
+  return (
+    description || {
+      id: String(payload?.providerId || ''),
+      label: '',
+      capabilities: {},
+    }
+  );
+});
 ipcMain.handle('test-generation-provider', async (_event, payload) => {
   const provider = getProvider(payload?.providerId);
   if (!provider?.testConnection) {
@@ -108,13 +125,19 @@ ipcMain.handle('test-generation-provider', async (_event, payload) => {
   }
   const endpoint = String(payload?.endpoint || '').trim();
   const apiKey = String(payload?.apiKey || '').trim();
-  if (!endpoint || !apiKey) {
+  const capabilities = describeProvider(payload?.providerId, {
+    endpoint,
+    model: String(payload?.model || ''),
+  })?.capabilities;
+  const endpointMissing = capabilities?.requiresEndpoint !== false && !endpoint;
+  const keyMissing = capabilities?.requiresApiKey !== false && !apiKey;
+  if (endpointMissing || keyMissing) {
     return {
       ok: false,
       error:
-        !endpoint && !apiKey
+        endpointMissing && keyMissing
           ? '请先填写接口地址和 API Key'
-          : !endpoint
+          : endpointMissing
             ? '请先填写接口地址'
             : '请先填写 API Key',
     };
@@ -136,8 +159,22 @@ ipcMain.handle('list-generation-provider-models', async (_event, payload) => {
   }
   const endpoint = String(payload?.endpoint || '').trim();
   const apiKey = String(payload?.apiKey || '').trim();
-  if (!endpoint || !apiKey) {
-    return { ok: false, error: '请先填写接口地址和 API Key' };
+  const capabilities = describeProvider(payload?.providerId, {
+    endpoint,
+    model: String(payload?.model || ''),
+  })?.capabilities;
+  const endpointMissing = capabilities?.requiresEndpoint !== false && !endpoint;
+  const keyMissing = capabilities?.requiresApiKey !== false && !apiKey;
+  if (endpointMissing || keyMissing) {
+    return {
+      ok: false,
+      error:
+        endpointMissing && keyMissing
+          ? '请先填写接口地址和 API Key'
+          : endpointMissing
+            ? '请先填写接口地址'
+            : '请先填写 API Key',
+    };
   }
   try {
     return await provider.listModels({ endpoint, apiKey });

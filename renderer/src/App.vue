@@ -177,8 +177,6 @@ const {
   settingsModel,
   providerOptions,
   providerCapabilities,
-  modelIsGpt,
-  modelIsGemini,
   ratioOptions,
   resolutionOptions,
   qualityOptions,
@@ -1005,6 +1003,25 @@ function promptDetailsFromItem(item = {}, metadata = {}) {
       item.title || item.name || metadata.name || basenameFromPath(filePath),
     prompt: String(metadata.prompt || item.prompt || ''),
     model: metadata.model || item.model || '',
+    originProviderId: metadata.originProviderId || item.originProviderId || '',
+    originProfileId: metadata.originProfileId || item.originProfileId || '',
+    originModel: metadata.originModel || item.originModel || '',
+    originProviderLabel:
+      metadata.originProviderLabel ||
+      item.originProviderLabel ||
+      providerOptions.value.find(
+        (provider) =>
+          provider.id === (metadata.originProviderId || item.originProviderId),
+      )?.label ||
+      '',
+    originProfileName:
+      metadata.originProfileName ||
+      item.originProfileName ||
+      providerProfiles.value.find(
+        (profile) =>
+          profile.id === (metadata.originProfileId || item.originProfileId),
+      )?.name ||
+      '',
     ratio: metadata.ratio || item.ratio || '',
     resolution: metadata.resolution || item.resolution || '',
     quality: metadata.quality || item.quality || '',
@@ -1271,7 +1288,6 @@ async function openPromptDetailsLocation() {
 async function applyImagePromptForCreation(details) {
   if (!details?.prompt) return;
   prompt.value = details.prompt;
-  if (details.model) model.value = details.model;
   if (details.ratio) ratio.value = details.ratio;
   if (details.resolution) resolution.value = details.resolution;
   if (details.quality) quality.value = details.quality;
@@ -2633,8 +2649,6 @@ onBeforeUnmount(() => {
             :output-format-options="outputFormatOptions"
             :max-references="maxReferences"
             :max-count="maxCount"
-            :model-is-gpt="modelIsGpt"
-            :model-is-gemini="modelIsGemini"
             :provider-capabilities="providerCapabilities"
             :busy="busy"
             :start-mode="createStartMode"
@@ -2666,6 +2680,13 @@ onBeforeUnmount(() => {
                 :conversation-start-mode="createStartMode"
                 :conversation-has-older="conversationHasOlder"
                 :conversation-has-newer="conversationHasNewer"
+                :active-provider-id="
+                  providerProfiles.find(
+                    (profile) => profile.id === activeProfileId,
+                  )?.providerId || ''
+                "
+                :active-profile-id="activeProfileId"
+                :active-model="model"
                 :scroll-bottom-signal="conversationScrollBottomSignal"
                 :follow-bottom-signal="conversationFollowBottomSignal"
                 :images="images"
@@ -2746,6 +2767,12 @@ onBeforeUnmount(() => {
           :conversation-total="conversationTotal"
           :conversation-has-older="conversationHasOlder"
           :conversation-has-newer="conversationHasNewer"
+          :active-provider-id="
+            providerProfiles.find((profile) => profile.id === activeProfileId)
+              ?.providerId || ''
+          "
+          :active-profile-id="activeProfileId"
+          :active-model="model"
           :scroll-bottom-signal="conversationScrollBottomSignal"
           :images="images"
           :image-paths="imagePaths"

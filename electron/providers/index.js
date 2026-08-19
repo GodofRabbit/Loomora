@@ -1,4 +1,5 @@
 const {
+  describeProvider,
   getProvider,
   listProviders,
   registerProvider,
@@ -9,4 +10,4 @@ const { replicateProvider } = require('./replicateProvider');
 registerProvider(openAiCompatibleProvider);
 registerProvider(replicateProvider);
 
-module.exports = { getProvider, listProviders };
+module.exports = { describeProvider, getProvider, listProviders };

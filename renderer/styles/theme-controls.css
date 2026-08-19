@@ -1334,6 +1334,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.generation-chat-origin-badge {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border: 1px solid rgba(224, 178, 105, 0.38);
+  border-radius: 999px;
+  background: rgba(127, 84, 38, 0.18);
+  color: #d5ae79;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
 .generation-chat-prompt-actions {
   display: flex;
   flex: 0 0 auto;

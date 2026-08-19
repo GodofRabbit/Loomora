@@ -12,36 +12,36 @@ Loomora 将 AI 生图、聊天式创作历史、本地作品库、灵感复用�
 
 ## 核心能力
 
-| 模块     | 当前能力                                                        |
-| -------- | --------------------------------------------------------------- |
-| AI 创作  | GPT Image 2、单张流式预览、最多 10 张批量生成、最多 16 张参考图 |
-| 服务接入 | OpenAI 兼容接口、Replicate、多配置档案、连接测试与模型列表读取  |
-| 生成队列 | 本地持久化、任务进度、点击定位、暂停、失败重试、清理已完成任务  |
-| 创作历史 | 聊天式记录、按需加载、编辑提示词、复用参考图、原对话内重试      |
-| 作品库   | 最新作品优先、瀑布流、日期时间轴、搜索、专辑/标签/颜色筛选      |
-| 作品管理 | 导入、拖拽导入、收藏、回收站、批量整理、批量导出与去重          |
-| 图片信息 | 查看并编辑完整提示词、参数、专辑、标签、颜色、备注和存储位置    |
-| 图片处理 | TOAST UI 图片编辑器、马赛克、撤销/重做、历史记录、版本恢复      |
-| 文字识别 | Paddle.js OCR 本地模型、独立工作窗口、结果复制                  |
-| 数据管理 | 自定义存储目录、本地备份与恢复、清除本地数据、可配置快捷键      |
-| 桌面体验 | Windows NSIS、macOS DMG、系统文件框、自定义标题栏和应用图标     |
+| 模块     | 当前能力                                                                  |
+| -------- | ------------------------------------------------------------------------- |
+| AI 创作  | Provider 能力驱动的文生图、参考图创作、批量生成、尺寸/质量/格式控制       |
+| 服务接入 | OpenAI-compatible、Replicate、多 Profile、连接测试、模型列表和动态能力    |
+| 生成队列 | 本地持久化、进度、点击定位、暂停、失败重试、自动拆批和已完成任务清理      |
+| 创作历史 | 聊天式记录、按需加载、提示词编辑、参考图复用、原对话内重试和来源追溯      |
+| 作品库   | 最新作品优先、瀑布流、日期时间轴、搜索、专辑/标签/颜色筛选                |
+| 作品管理 | 文件框多选导入、拖拽导入、收藏、回收站、批量整理、导出和内容去重          |
+| 图片信息 | 查看/编辑提示词、生成参数、首次服务来源、专辑、标签、颜色、备注和路径     |
+| 图片处理 | TOAST UI 图片编辑器、马赛克、撤销/重做、历史记录、版本对比和版本恢复      |
+| 文字识别 | Paddle.js 本地 OCR 模型、独立工作窗口、取消识别和结果复制                 |
+| 数据管理 | 自定义存储目录、本地备份与恢复、清除本地数据、按 Profile 加密保存 API Key |
+| 桌面体验 | Windows NSIS、macOS DMG、系统文件框、自定义标题栏和应用图标               |
 
 ## AI 创作
 
 ![Loomora AI 创作工作台](docs/screenshots/creation-workspace.jpg)
 
-- OpenAI 兼容服务默认模型为 `gpt-image-2`，提示词上限为 4000 个字符，单次最多生成 10 张图片。
-- 支持 `1:1`、`16:9`、`9:16`、`4:3`、`3:4`、`3:2` 和 `2:3` 七种画面比例。
-- 支持自动尺寸及常用 2K、4K 规格，输出格式可选 `PNG`、`JPEG` 或 `WEBP`。
-- 最多添加 16 张参考图，可通过系统文件框选择，也可使用 `Ctrl+V` 从剪贴板粘贴。
-- 官方 OpenAI 兼容接口的单张请求支持流式中间图预览；第三方 OpenAI 兼容接口会按能力自动降级为非流式请求，避免因代理不支持流式图片而降低成功率。
+- 创作表单根据当前 Provider/Profile 和模型能力动态显示控件；不支持的参考图、比例、尺寸、质量、格式或批量选项会自动隐藏或限制。
+- OpenAI-compatible 默认模型为 `gpt-image-2`，提示词上限为 4000 个字符，最多生成 10 张图片、最多 16 张参考图。
+- Replicate 使用 `owner/model` 模型标识，当前按单张生成和单张参考图校验，并通过异步任务轮询获取结果。
+- OpenAI-compatible 支持常用比例、尺寸、质量和输出格式；官方 OpenAI 单张请求支持流式中间图预览，第三方兼容接口会自动降级为非流式请求。
+- 参考图可通过系统文件框、拖拽/粘贴等方式加入；具体数量和传输格式由当前 Provider 的能力声明与适配器决定。
 - 缺少服务地址或 API Key 时会立即提示并打开设置，不会进入无效的长时间等待。
-- 每次生成都会记录提示词、参数、服务档案、参考图、进度和结果。历史对话中的重试会更新原记录，不会新增重复对话。
+- 每次生成都会记录提示词、参数、Provider/Profile、参考图、进度和结果。历史对话中的重试会更新原记录，不会新增重复对话；重新生成、参考图创作和队列重试使用当前选中的服务。
 - 生成队列中的“生成中”任务可点击跳回创作历史，并平滑定位到对应对话轮次；目标对话会短暂高亮。
 
 ### 多服务配置
 
-设置中可以创建多个服务档案。每个档案独立保存服务类型、接口地址、模型和 API Key，生成队列同时记录 `providerId` 与 `profileId`，确保任务始终使用创建时选择的服务。
+设置中可以创建多个服务档案。每个档案独立保存服务类型、接口地址和模型，API Key 通过系统安全存储按 Profile 加密保存。生成队列会记录任务创建时的 `providerId` 与 `profileId`，保证排队任务可追溯；用户点击失败重试时，会按当前选中的服务重新提交。
 
 当前内置：
 
@@ -171,12 +171,148 @@ Replicate Provider 使用模型预测接口创建任务，并轮询任务状态�
 
 ## Provider 扩展
 
-Provider 位于 `electron/providers/`，通过注册表提供统一能力元数据与生成结果。新增平台时实现并注册以下内容即可复用现有设置、队列、历史和作品保存流程：
+Loomora 把 Provider 看作“平台方言适配器”，而不是假设所有生图平台都遵循同一套接口。公共生成流程只负责请求校验、队列、进度、本地保存和历史记录；平台的 URL、请求字段、鉴权方式、参考图格式、同步/异步流程和响应解析全部由适配器负责。这样接入新的国内平台或自部署服务时，不需要修改创作页面和作品库。
 
-- `id`、显示名称与能力声明；
-- `generate()` 统一生成入口；
-- 可选的 `testConnection()`、`listModels()` 和 `cancel()`；
-- 返回响应流或标准化图片结果。
+### 1. 统一请求对象
+
+适配器的 `generate()` 会收到以下已经规范化的请求对象：
+
+```js
+{
+  (providerId, // Provider ID
+    profileId, // 当前服务配置 ID
+    endpoint, // 服务地址，可为空（由 Provider 决定是否需要）
+    apiKey, // 当前 Profile 的密钥
+    model, // 模型或平台版本标识
+    prompt, // 已去除空字符、规范换行和首尾空白
+    aspect, // 画面比例，例如 1:1、16:9
+    size, // 尺寸，例如 1024x1024
+    quality, // 质量档位
+    outputFormat, // png、jpeg 或 webp
+    count, // 用户请求数量，公共上限为 10
+    references, // 统一的参考图数组
+    options); // Provider 专属扩展参数
+}
+```
+
+参考图统一为 `references[]`，每项至少包含 `name` 和 `data`：
+
+```js
+{
+  name: 'reference.png',
+  data: 'data:image/png;base64,...',
+  mimeType: 'image/png',
+  role: ''
+}
+```
+
+适配器必须自行把它转换为目标平台要求的形式，例如 JSON 中的图片 URL、Base64 数组、multipart 文件、单个 `image` 字段或平台专用编号。公共流程不会假设“多张参考图”一定使用某一个字段。
+
+### 2. Provider 接口
+
+在 `electron/providers/` 新增适配器对象，并至少实现：
+
+```js
+const exampleProvider = {
+  id: 'example-platform',
+  label: '示例平台',
+  capabilities: {
+    requiresEndpoint: true,
+    requiresApiKey: true,
+    imageToImage: false,
+    references: false,
+    maxReferences: 0,
+    aspect: true,
+    size: true,
+    quality: false,
+    outputFormat: true,
+    streaming: false,
+    partialPreview: false,
+    polling: false,
+    cancel: true,
+    maxCount: 4,
+    nativeBatchLimit: 1,
+    promptLimit: 4000,
+  },
+
+  async generate({ request, signal, count, onProgress }) {
+    // 在这里完成请求、解析、轮询和平台错误转换。
+    return {
+      kind: 'result',
+      items: [{ url: 'https://example.test/image.png' }],
+    };
+  },
+};
+```
+
+可选方法：
+
+- `getCapabilities({ endpoint, model })`：根据 Endpoint 或模型返回动态能力。例如某个模型支持三张参考图，另一个模型只支持一张。
+- `validateRequest({ request, capabilities })`：返回中文错误信息，处理模型格式、必填参数或平台专属限制。
+- `testConnection({ endpoint, apiKey, model })`：用于设置弹窗中的连接测试。
+- `listModels({ endpoint, apiKey })`：返回 `{ ok: true, models: ['model-a'] }`，用于模型列表读取。
+
+Provider 不能把原始 `fetch()` Response 返回给公共层，也不要在 `generation.js` 中加入平台判断。所有 JSON、multipart、SSE、任务轮询和响应字段兼容都应封装在当前适配器中。
+
+### 3. 能力声明与批量策略
+
+`providerContract.js` 会合并静态和动态能力，并负责校验及拆批。常用能力字段如下：
+
+| 字段                                           | 含义                                                 |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| `requiresEndpoint` / `requiresApiKey`          | 是否必须填写接口地址或密钥；本地服务可以设为 `false` |
+| `imageToImage` / `references`                  | 是否支持参考图创作                                   |
+| `maxReferences`                                | 单次请求允许的参考图数量                             |
+| `maxCount`                                     | 当前 Provider 或模型允许的总生成数量                 |
+| `nativeBatchLimit`                             | 平台单次请求最多接收的数量                           |
+| `aspect` / `size` / `quality` / `outputFormat` | 是否支持对应创作参数                                 |
+| `supportedAspects` / `supportedSizes`          | 可选的比例和尺寸列表                                 |
+| `streaming` / `partialPreview`                 | 是否支持流式响应和中间预览                           |
+| `polling` / `cancel`                           | 是否使用异步轮询、是否能响应取消                     |
+| `promptLimit`                                  | 平台提示词字符上限                                   |
+
+例如 Provider 声明 `maxCount: 10`、`nativeBatchLimit: 4`，用户请求 10 张时，公共流程会自动按 `[4, 4, 2]` 调用三次并合并结果。Provider 只需要保证单次 `generate()` 能正确处理传入的 `count`。
+
+### 4. 标准结果与下载
+
+`generate()` 必须返回 `{ kind: 'result', items }`。每个图片项至少提供 `url` 或 `base64`，也可以提供 `mimeType`：
+
+```js
+{
+  kind: 'result',
+  providerRequestId: 'optional-task-id',
+  items: [
+    { url: 'https://example.test/image.png' },
+    { base64: 'iVBORw0KGgo...', mimeType: 'image/png' }
+  ]
+}
+```
+
+如果 URL 是平台返回的临时签名地址，设置 `authenticatedDownload: false`。公共保存流程会直接下载，不会附加当前 Profile 的 Bearer Key；需要鉴权下载的 Provider 保持默认值即可。Base64 图片不经过远程下载，直接写入本地作品库。
+
+### 5. 同步、流式和异步平台
+
+- 同步平台：请求完成后直接返回标准结果。
+- 流式平台：在收到中间图片时调用 `onProgress({ phase: 'partial', item, partial })`，完成后仍返回完整标准结果。
+- 异步平台：创建任务后使用 `signal` 监听取消，轮询任务状态，并通过 `onProgress({ phase: 'provider-progress', message })` 报告进度；任务最终状态必须转换成成功结果或可读的错误。
+
+平台的 HTTP 错误、模型错误和任务失败应在适配器内转换成清晰的错误信息，公共层只负责显示和结束当前队列任务。
+
+### 6. Profile、重试与历史来源
+
+Profile 只保存平台配置：名称、`providerId`、Endpoint 和模型；API Key 通过 Electron `safeStorage` 按 `profileId` 单独加密保存。新增 Provider 后，设置弹窗会自动将它作为服务类型供用户创建多个 Profile。
+
+重新生成、作为参考图创作和失败队列重试始终使用用户当前选中的 Provider、Profile 和模型，不会强制切回历史服务。历史记录仍保存 `originProviderId`、`originProfileId` 和 `originModel`，用于在提示词详情中追溯首次生成来源。
+
+### 7. 注册与验证清单
+
+1. 在 `electron/providers/` 创建适配器，并实现统一 `generate()` 结果。
+2. 在 `electron/providers/index.js` 引入并调用 `registerProvider(provider)`。
+3. 为每个模型准确声明能力，尤其是参考图数量、原生批量上限、提示词长度和取消方式。
+4. 添加 `test/providers.test.js` 覆盖请求映射、错误解析、能力覆盖、拆批和结果标准化。
+5. 运行 `npm test`、`npm run build:ui`，并在 Windows/macOS 上检查连接测试、生成、取消、重试、参考图创作和本地保存。
+
+当前内置 Provider 为 OpenAI-compatible 和 Replicate。SiliconFlow、智谱、通义、火山引擎等平台暂未内置；后续接入时应各自实现薄适配器，不应把平台字段或特殊分支重新写回公共生成流程。
 
 ## 技术栈
 
@@ -201,7 +337,7 @@ Loomora/
 │  ├─ gallery.js                  # 作品库、创作历史和文件 IPC
 │  ├─ galleryMetadata.js          # 提示词、标签、专辑和版本元数据
 │  ├─ galleryTrash.js             # 回收站
-│  ├─ generation.js               # 生图请求与流式事件
+│  ├─ generation.js               # 通用生图调度、进度与本地保存
 │  ├─ generationQueue.js          # 本地持久化生成队列
 │  ├─ backup.js                   # 本地备份与恢复
 │  ├─ secureCredentials.js        # API Key 加密存储

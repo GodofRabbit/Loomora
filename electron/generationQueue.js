@@ -125,6 +125,10 @@ function addTask(request = {}) {
       quality: String(request.quality || ''),
       outputFormat: String(request.outputFormat || ''),
       count: Math.max(1, Number(request.count) || 1),
+      options:
+        request.options && typeof request.options === 'object'
+          ? { ...request.options }
+          : {},
     },
     references,
   };
@@ -172,6 +176,30 @@ function updateTask(id, status, error = '', conversationId = '') {
   return publicTask(tasks[index]);
 }
 
+function retryTaskWithService(id, service = {}) {
+  const tasks = readQueue();
+  const index = tasks.findIndex((task) => task.id === id);
+  if (index < 0) throw new Error('生成队列任务不存在');
+  if (tasks[index].status === 'running') {
+    throw new Error('正在生成的任务不能重试');
+  }
+  tasks[index] = {
+    ...tasks[index],
+    status: 'pending',
+    error: '',
+    updatedAt: Date.now(),
+    request: {
+      ...(tasks[index].request || {}),
+      providerId: String(service.providerId || 'openai-compatible'),
+      profileId: String(service.profileId || 'openai-main'),
+      endpoint: String(service.endpoint || ''),
+      model: String(service.model || ''),
+    },
+  };
+  writeQueue(tasks);
+  return publicTask(tasks[index]);
+}
+
 function removeTask(id) {
   const tasks = readQueue();
   const next = tasks.filter((task) => task.id !== id);
@@ -213,6 +241,9 @@ function registerGenerationQueueHandlers() {
       payload?.error,
       payload?.conversationId,
     ),
+  );
+  ipcMain.handle('retry-generation-queue-task', (_event, payload) =>
+    retryTaskWithService(String(payload?.id || ''), payload),
   );
   ipcMain.handle('remove-generation-queue-task', (_event, id) =>
     removeTask(String(id || '')),

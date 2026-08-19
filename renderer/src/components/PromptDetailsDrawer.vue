@@ -117,6 +117,13 @@ const metadataRows = computed(() => {
   const details = props.details || {};
   const rows = [
     ['模型', details.model],
+    details.originProviderLabel || details.originProviderId
+      ? ['生成服务', details.originProviderLabel || details.originProviderId]
+      : null,
+    details.originProfileName || details.originProfileId
+      ? ['服务配置', details.originProfileName || details.originProfileId]
+      : null,
+    details.originModel ? ['生成模型', details.originModel] : null,
     ['画面比例', details.ratio],
     ['分辨率', details.resolution],
     ['质量', details.quality],
@@ -144,7 +151,7 @@ const metadataRows = computed(() => {
   }
   if (details.version > 1) rows.push(['作品版本', `第 ${details.version} 版`]);
   if (details.filePath) rows.push(['存储位置', details.filePath]);
-  return rows.filter(([, value]) => String(value || '').trim());
+  return rows.filter((row) => row && String(row[1] || '').trim());
 });
 </script>
 

@@ -133,13 +133,24 @@
   gap: 7px;
 }
 .provider-profile-actions button {
-  min-height: 34px;
-  padding: 0 11px;
+  display: inline-flex;
+  min-width: 72px;
+  height: 44px;
+  padding: 0 10px;
   border: 1px solid rgba(171, 124, 234, 0.35);
   border-radius: 6px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   background: rgba(92, 60, 141, 0.32);
   color: #d9c9ef;
   font-size: 12px;
+  white-space: nowrap;
+}
+.provider-profile-actions button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
 }
 .provider-profile-actions button:hover {
   border-color: rgba(206, 171, 250, 0.7);
@@ -370,6 +381,12 @@
 }
 .provider-model-results {
   margin-top: 2px;
+}
+.provider-profile-select .dropdown-select-trigger > span {
+  text-overflow: clip;
+}
+.provider-profile-select .dropdown-select-panel {
+  min-width: max(100%, 220px);
 }
 .provider-model-row button {
   height: 44px;

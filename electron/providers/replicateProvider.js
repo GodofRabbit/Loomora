@@ -17,16 +17,16 @@ function headers(apiKey, json = false) {
   };
 }
 
-function inputFor(payload, references) {
+function inputFor(request) {
   const input = {
-    prompt: String(payload.prompt || '').trim(),
-    aspect_ratio: String(payload.aspect || '1:1'),
-    output_format: ['png', 'jpeg', 'webp'].includes(payload.outputFormat)
-      ? payload.outputFormat
+    prompt: request.prompt,
+    aspect_ratio: request.aspect,
+    output_format: ['png', 'jpeg', 'webp'].includes(request.outputFormat)
+      ? request.outputFormat
       : 'png',
   };
-  if (references.length) {
-    input.image = references[0].data;
+  if (request.references.length) {
+    input.image = request.references[0].data;
   }
   return input;
 }
@@ -38,7 +38,7 @@ function outputItems(output) {
       typeof value === 'string' ? value : value?.url || value?.uri || '',
     )
     .filter((url) => /^https?:\/\//i.test(url))
-    .map((url) => ({ url }));
+    .map((url) => ({ url, authenticatedDownload: false }));
 }
 
 async function cancelPrediction(base, apiKey, requestId) {
@@ -59,7 +59,7 @@ async function responseJson(response) {
   }
 }
 
-async function waitForPrediction(base, apiKey, prediction, signal) {
+async function waitForPrediction(base, apiKey, prediction, signal, onProgress) {
   let current = prediction;
   for (let index = 0; index < MAX_POLL_COUNT; index += 1) {
     if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -86,6 +86,11 @@ async function waitForPrediction(base, apiKey, prediction, signal) {
       throw new Error(
         current.detail || current.error || 'Replicate 任务查询失败',
       );
+    onProgress?.({
+      phase: 'provider-progress',
+      message: `Replicate 任务状态：${current.status || '处理中'}`,
+      metadata: { status: current.status },
+    });
   }
   throw new Error('Replicate 任务等待超时');
 }
@@ -95,8 +100,11 @@ const replicateProvider = {
   label: 'Replicate',
   capabilities: {
     textToImage: true,
+    requiresEndpoint: true,
+    requiresApiKey: true,
     imageToImage: true,
     references: true,
+    aspect: true,
     size: false,
     quality: false,
     outputFormat: true,
@@ -105,19 +113,26 @@ const replicateProvider = {
     partialPreview: false,
     polling: true,
     cancel: true,
+    maxReferences: 1,
+    maxCount: 1,
+    nativeBatchLimit: 1,
+    promptLimit: 4000,
+    supportedAspects: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
   },
-  async generate({ payload, references, signal }) {
-    const base = endpointBase(payload.endpoint);
-    const model = String(payload.model || '').trim();
+  validateRequest({ request }) {
+    const model = String(request.model || '').trim();
     if (!model || !model.includes('/')) {
-      throw new Error(
-        'Replicate 模型应填写 owner/model，例如 black-forest-labs/flux-schnell',
-      );
+      return 'Replicate 模型应填写 owner/model，例如 black-forest-labs/flux-schnell';
     }
+    return '';
+  },
+  async generate({ request, signal, onProgress }) {
+    const base = endpointBase(request.endpoint);
+    const model = request.model;
     const response = await fetch(`${base}/v1/models/${model}/predictions`, {
       method: 'POST',
-      headers: headers(payload.apiKey, true),
-      body: JSON.stringify({ input: inputFor(payload, references) }),
+      headers: headers(request.apiKey, true),
+      body: JSON.stringify({ input: inputFor(request) }),
       signal,
     });
     const prediction = await responseJson(response);
@@ -130,16 +145,17 @@ const replicateProvider = {
     }
     if (!prediction.id) throw new Error('Replicate 未返回任务编号');
     const cancelOnAbort = () => {
-      cancelPrediction(base, payload.apiKey, prediction.id).catch(() => {});
+      cancelPrediction(base, request.apiKey, prediction.id).catch(() => {});
     };
     signal.addEventListener('abort', cancelOnAbort, { once: true });
     let result;
     try {
       result = await waitForPrediction(
         base,
-        payload.apiKey,
+        request.apiKey,
         prediction,
         signal,
+        onProgress,
       );
     } finally {
       signal.removeEventListener('abort', cancelOnAbort);
@@ -153,9 +169,9 @@ const replicateProvider = {
     if (!items.length) throw new Error('Replicate 未返回图片地址');
     return { kind: 'result', items, providerRequestId: result.id };
   },
-  async cancel({ payload, requestId }) {
-    const base = endpointBase(payload.endpoint);
-    return { ok: await cancelPrediction(base, payload.apiKey, requestId) };
+  async cancel({ request, requestId }) {
+    const base = endpointBase(request.endpoint);
+    return { ok: await cancelPrediction(base, request.apiKey, requestId) };
   },
   async testConnection({ endpoint, apiKey }) {
     const base = endpointBase(endpoint);

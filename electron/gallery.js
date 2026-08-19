@@ -480,6 +480,13 @@ function sanitizeConversationTurn(turn = {}) {
     model: String(turn.model || ''),
     providerId: String(turn.providerId || 'openai-compatible'),
     profileId: String(turn.profileId || 'openai-main'),
+    originModel: String(turn.originModel || turn.model || ''),
+    originProviderId: String(
+      turn.originProviderId || turn.providerId || 'openai-compatible',
+    ),
+    originProfileId: String(
+      turn.originProfileId || turn.profileId || 'openai-main',
+    ),
     ratio: String(turn.ratio || ''),
     resolution: String(turn.resolution || ''),
     quality: String(turn.quality || ''),
@@ -1153,8 +1160,10 @@ function requestHeaders(key) {
   return { Authorization: `Bearer ${key}` };
 }
 
-async function downloadRemoteImage(url, key) {
-  const response = await fetch(url, { headers: requestHeaders(key) });
+async function downloadRemoteImage(url, key, authenticated = true) {
+  const response = await fetch(url, {
+    headers: authenticated && key ? requestHeaders(key) : {},
+  });
   if (!response.ok) throw new Error(`下载图片失败（${response.status}）`);
   return {
     buffer: Buffer.from(await response.arrayBuffer()),
@@ -1178,14 +1187,18 @@ async function saveGeneratedImages(items, { key, outputFormat = 'png' }) {
         : outputFormat === 'webp'
           ? 'image/webp'
           : 'image/png';
-    let mime = item.mime_type || fallbackMime;
+    let mime = item.mimeType || item.mime_type || fallbackMime;
     const base64 = item.b64_json || item.base64;
     const url = item.url || item.image_url;
 
     if (base64) {
       buffer = Buffer.from(base64.replace(/^data:[^,]+,/, ''), 'base64');
     } else if (url) {
-      const downloaded = await downloadRemoteImage(url, key);
+      const downloaded = await downloadRemoteImage(
+        url,
+        key,
+        item.authenticatedDownload !== false,
+      );
       buffer = downloaded.buffer;
       mime =
         downloaded.mime ||

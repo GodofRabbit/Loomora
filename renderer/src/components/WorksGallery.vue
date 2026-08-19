@@ -43,6 +43,9 @@ const props = defineProps({
   conversationStartMode: Boolean,
   conversationHasOlder: Boolean,
   conversationHasNewer: Boolean,
+  activeProviderId: { type: String, default: '' },
+  activeProfileId: { type: String, default: '' },
+  activeModel: { type: String, default: '' },
   scrollBottomSignal: { type: Number, default: 0 },
   followBottomSignal: { type: Number, default: 0 },
   images: { type: Array, required: true },
@@ -397,6 +400,17 @@ function turnMeta(turn) {
   ]
     .filter(Boolean)
     .join(' · ');
+}
+
+function turnOriginChanged(turn) {
+  const originProvider = String(turn.originProviderId || turn.providerId || '');
+  const originProfile = String(turn.originProfileId || turn.profileId || '');
+  const originModel = String(turn.originModel || turn.model || '');
+  return Boolean(
+    (props.activeProviderId && originProvider !== props.activeProviderId) ||
+    (props.activeProfileId && originProfile !== props.activeProfileId) ||
+    (props.activeModel && originModel !== props.activeModel),
+  );
 }
 
 function turnStatusText(turn) {
@@ -1360,6 +1374,13 @@ onBeforeUnmount(() => {
                 <p>{{ turn.prompt }}</p>
                 <div class="generation-chat-user-foot">
                   <small>{{ turnMeta(turn) }}</small>
+                  <span
+                    v-if="turnOriginChanged(turn)"
+                    class="generation-chat-origin-badge"
+                    title="本轮记录保留了首次生成服务，当前服务已不同"
+                  >
+                    来源已变更
+                  </span>
                   <div class="generation-chat-prompt-actions">
                     <button
                       type="button"

@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('forge', {
     ipcRenderer.invoke('clear-secure-api-key', profileId),
   listGenerationProviders: () =>
     ipcRenderer.invoke('list-generation-providers'),
+  describeGenerationProvider: (payload) =>
+    ipcRenderer.invoke('describe-generation-provider', payload),
   testGenerationProvider: (payload) =>
     ipcRenderer.invoke('test-generation-provider', payload),
   listGenerationProviderModels: (payload) =>
@@ -29,6 +31,8 @@ contextBridge.exposeInMainWorld('forge', {
     ipcRenderer.invoke('get-generation-queue-task', id),
   updateGenerationQueueTask: (payload) =>
     ipcRenderer.invoke('update-generation-queue-task', payload),
+  retryGenerationQueueTask: (payload) =>
+    ipcRenderer.invoke('retry-generation-queue-task', payload),
   removeGenerationQueueTask: (id) =>
     ipcRenderer.invoke('remove-generation-queue-task', id),
   clearFinishedGenerationTasks: () =>

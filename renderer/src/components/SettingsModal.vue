@@ -7,6 +7,7 @@ import {
   HardDriveDownload,
   HardDriveUpload,
   Keyboard,
+  Plus,
   PlugZap,
   RotateCcw,
   Save,
@@ -119,6 +120,20 @@ watch(
   () => props.providerId,
   (value) => {
     if (props.open) providerDraft.value = value;
+  },
+);
+
+watch(
+  () => props.endpoint,
+  (value) => {
+    if (props.open) endpointDraft.value = value;
+  },
+);
+
+watch(
+  () => props.apiKey,
+  (value) => {
+    if (props.open) apiKeyDraft.value = value;
   },
 );
 
@@ -271,6 +286,7 @@ async function resetShortcutDraft() {
               <label>
                 <span>当前服务</span>
                 <DropdownSelect
+                  class="provider-profile-select"
                   :model-value="profileDraftId"
                   :options="
                     providerProfiles.map((profile) => ({
@@ -286,17 +302,21 @@ async function resetShortcutDraft() {
                 <button
                   type="button"
                   title="新建服务"
+                  aria-label="新建服务"
                   @click="emit('profile-create')"
                 >
-                  新建
+                  <Plus aria-hidden="true" />
+                  <span>新建</span>
                 </button>
                 <button
                   v-if="providerProfiles.length > 1"
                   type="button"
                   title="删除当前服务"
+                  aria-label="删除当前服务"
                   @click="emit('profile-delete', profileDraftId)"
                 >
-                  删除
+                  <Trash2 aria-hidden="true" />
+                  <span>删除</span>
                 </button>
               </div>
             </div>

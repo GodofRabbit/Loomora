@@ -2,18 +2,13 @@ const { ipcMain } = require('electron');
 const { saveGeneratedImages } = require('./gallery');
 const { getProvider } = require('./providers');
 const {
-  isOfficialOpenAiEndpoint,
-} = require('./providers/openaiCompatibleProvider');
-
-const OPENAI_IMAGE_MODEL = 'gpt-image-2';
-const PARTIAL_IMAGE_COUNT = 2;
-const MAX_GENERATION_COUNT = 10;
-const MAX_REFERENCE_COUNT = 16;
-const DEFAULT_PROMPT_LIMIT = 4000;
-const MODEL_ALIASES = {
-  'dall-e': OPENAI_IMAGE_MODEL,
-  'dall-e-2': OPENAI_IMAGE_MODEL,
-};
+  normalizeGenerationRequest,
+  normalizeImageItem,
+  normalizeProviderResult,
+  planGenerationBatches,
+  resolveProviderCapabilities,
+  validateGenerationRequest,
+} = require('./providers/providerContract');
 
 const USER_ERROR_RULES = [
   [
@@ -35,20 +30,6 @@ const USER_ERROR_RULES = [
 
 let activeGeneration = null;
 
-const normalizeModel = (model) =>
-  MODEL_ALIASES[model] || String(model || '').trim() || OPENAI_IMAGE_MODEL;
-function normalizedPrompt(value) {
-  return String(value || '')
-    .replace(/\u0000/g, '')
-    .replace(/\r\n?/g, '\n')
-    .trim();
-}
-function promptLength(value) {
-  return Array.from(normalizedPrompt(value)).length;
-}
-function shouldUseImageStream(payload) {
-  return isOfficialOpenAiEndpoint(payload?.endpoint);
-}
 function formatUserError(value, fallback = '操作失败，请稍后重试') {
   const raw =
     typeof value === 'string'
@@ -57,30 +38,10 @@ function formatUserError(value, fallback = '操作失败，请稍后重试') {
   const message = String(raw).trim();
   if (!message) return fallback;
   if (/[\u3400-\u9fff]/.test(message)) return message;
-  const lower = message.toLowerCase();
   for (const [rule, text] of USER_ERROR_RULES) {
-    if (rule.test(lower)) return text;
+    if (rule.test(message)) return text;
   }
   return fallback;
-}
-
-function imagesOf(data) {
-  if (!data) return [];
-  if (data?.result_url) return [{ url: data.result_url }];
-  if (Array.isArray(data?.data)) return data.data;
-  if (data?.image && typeof data.image === 'object') {
-    const nested = imagesOf(data.image);
-    if (nested.length) return nested;
-  }
-  if (data?.data && typeof data.data === 'object') {
-    const nested = imagesOf(data.data);
-    if (nested.length) return nested;
-  }
-  return ['url', 'image_url', 'b64_json', 'base64', 'partial_image_b64'].some(
-    (key) => data?.[key],
-  )
-    ? [data]
-    : [];
 }
 
 function userFacingError(error) {
@@ -91,7 +52,7 @@ function userFacingError(error) {
     return '已取消生成';
   }
   if (/Invalid URL/i.test(details)) {
-    return '接口地址无效，请检查 OpenAI 兼容接口地址';
+    return '接口地址无效，请检查当前服务配置';
   }
   if (/ENOTFOUND|getaddrinfo|ECONNREFUSED/i.test(details)) {
     return '无法连接到图片接口，请检查网络连接';
@@ -103,364 +64,162 @@ function userFacingError(error) {
   ) {
     return '网络连接意外中断，请检查网络后重试';
   }
-  if (
-    /ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|AbortError|timed?\s*out/i.test(details)
-  ) {
+  if (/ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|timed?\s*out/i.test(details)) {
     return '接口响应超时，请稍后重试';
   }
   return formatUserError(error, '图片生成失败，请稍后重试');
 }
 
-function emitUpdate(event, payload) {
+function report(event, payload) {
   if (!event.sender.isDestroyed()) {
     event.sender.send('generation-update', payload);
   }
 }
 
-function report(event, payload) {
-  emitUpdate(event, payload);
-}
-
-function requestedOutputFormat(payload) {
-  return ['png', 'jpeg', 'webp'].includes(payload.outputFormat)
-    ? payload.outputFormat
-    : 'png';
-}
-
-async function responseText(response) {
-  const text = await response.text();
-  try {
-    const json = JSON.parse(text);
-    return formatUserError(
-      json?.error?.message || json?.message,
-      `接口请求失败（${response.status}）`,
-    );
-  } catch {
-    return formatUserError(text, `接口请求失败（${response.status}）`);
-  }
-}
-
-async function responseJson(response, label = '接口') {
-  const text = await response.text();
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`${label}返回了无法解析的数据`);
-  }
-}
-
-function parseSseMessage(message) {
-  const normalized = message.replace(/\r/g, '');
-  const lines = normalized.split('\n');
-  let name = '';
-  const data = [];
-  for (const line of lines) {
-    if (!line || line.startsWith(':')) continue;
-    if (line.startsWith('event:')) {
-      name = line.slice(6).trim();
-    } else if (line.startsWith('data:')) {
-      data.push(line.slice(5).trimStart());
-    }
-  }
-  if (!data.length) return null;
-  const raw = data.join('\n');
-  if (raw === '[DONE]') return null;
-  try {
-    const payload = JSON.parse(raw);
-    return { name: name || payload.type || 'message', payload };
-  } catch {
-    return { name: name || 'message', payload: raw };
-  }
-}
-
-async function* readSse(response) {
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('当前环境不支持流式响应');
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    buffer = buffer.replace(/\r\n/g, '\n');
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary >= 0) {
-      const message = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const event = parseSseMessage(message);
-      if (event) yield event;
-      boundary = buffer.indexOf('\n\n');
-    }
-  }
-
-  buffer += decoder.decode();
-  buffer = buffer.replace(/\r\n/g, '\n');
-  const leftover = buffer.trim();
-  if (leftover) {
-    const event = parseSseMessage(leftover);
-    if (event) yield event;
-  }
-}
-
-function previewFromItem(item, outputFormat = 'png') {
-  const base64 = item?.b64_json || item?.base64 || item?.partial_image_b64;
-  if (!base64) return '';
+function previewFromItem(value, outputFormat) {
+  const item = normalizeImageItem(value);
+  if (!item?.base64) return '';
+  if (item.base64.startsWith('data:image/')) return item.base64;
   const mime =
-    item?.mime_type ||
+    item.mimeType ||
     (outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`);
-  return `data:${mime};base64,${base64.replace(/^data:[^,]+,/, '')}`;
+  return `data:${mime};base64,${item.base64}`;
 }
 
-async function consumeImageStream(
-  response,
-  { event, batchIndex, total, outputFormat = 'png' },
-) {
-  let latestItem = null;
-  let partial = 0;
-  for await (const { name, payload } of readSse(response)) {
-    const items = imagesOf(payload);
-    if (items.length) latestItem = items[0];
-
-    if (name.includes('partial_image')) {
-      partial += 1;
-      const preview = previewFromItem(items[0] || latestItem, outputFormat);
+function progressReporter(event, request, batchIndex, total, completed) {
+  return (update = {}) => {
+    const message = String(update.message || '');
+    if (update.phase === 'partial') {
       report(event, {
         phase: 'partial',
         batchIndex,
         total,
-        completed: batchIndex,
-        partial,
-        preview,
-        message: `第 ${batchIndex + 1}/${total} 张预览已更新`,
+        completed,
+        partial: Math.max(1, Number(update.partial) || 1),
+        preview: previewFromItem(update.item, request.outputFormat),
+        message: message || `第 ${completed + 1}/${total} 张预览已更新`,
       });
-      continue;
+      return;
     }
-
-    if (name.includes('completed')) {
-      const finalItems = items.length ? items : latestItem ? [latestItem] : [];
-      if (!finalItems.length) throw new Error('接口未返回图片数据');
-      return finalItems[0];
+    if (message) {
+      report(event, {
+        phase: 'provider-progress',
+        batchIndex,
+        total,
+        completed,
+        message,
+      });
     }
-  }
-
-  if (latestItem) return latestItem;
-  throw new Error('接口流式响应未返回图片数据');
+  };
 }
 
-async function sendOpenAiRequest(
-  payload,
-  model,
-  references,
-  signal,
-  options = {},
-) {
-  const provider = getProvider(payload.providerId);
-  if (!provider) throw new Error(`未找到生图服务：${payload.providerId}`);
-  const response = await provider.generate({
-    payload: { ...payload, model },
-    references,
-    signal,
-    count: Math.max(1, Number(options.count) || 1),
-    stream: Boolean(options.stream),
-  });
-  if (response?.kind === 'result') return response;
-  const httpResponse =
-    response?.kind === 'response' ? response.response : response;
-  if (!httpResponse?.ok) throw new Error(await responseText(httpResponse));
-  return { kind: 'response', response: httpResponse };
-}
-
-async function requestSingleImage(
-  payload,
-  model,
-  references,
-  signal,
+async function executeGeneration({
+  provider,
+  request,
+  capabilities,
   event,
-  { stream },
-) {
-  const providerResult = await sendOpenAiRequest(
-    payload,
-    model,
-    references,
-    signal,
-    { count: 1, stream },
-  );
-  if (providerResult.kind === 'result') return providerResult.items?.[0];
-  if (stream) {
-    return consumeImageStream(providerResult.response, {
-      event,
-      batchIndex: 0,
-      total: 1,
-      outputFormat: requestedOutputFormat(payload),
-    });
-  }
-  const json = await responseJson(providerResult.response, 'image api');
-  return imagesOf(json)[0];
-}
-
-async function generateSingle(payload, event, signal) {
-  if (!payload?.apiKey) return { ok: false, error: '请先填写 API Key' };
-  payload.prompt = normalizedPrompt(payload.prompt);
-  if (!payload.prompt) return { ok: false, error: '请输入提示词' };
-  const model = normalizeModel(payload.model?.trim() || OPENAI_IMAGE_MODEL);
-  if (promptLength(payload.prompt) > DEFAULT_PROMPT_LIMIT) {
-    return {
-      ok: false,
-      error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符`,
-    };
-  }
-
-  const references = Array.isArray(payload.reference) ? payload.reference : [];
-  if (references.length > MAX_REFERENCE_COUNT) {
-    return { ok: false, error: `最多支持 ${MAX_REFERENCE_COUNT} 张参考图` };
-  }
+  signal,
+}) {
+  const batches = planGenerationBatches(request.count, capabilities);
+  const images = [];
+  const localPaths = [];
+  let folder = '';
+  let completed = 0;
 
   try {
-    report(event, {
-      phase: 'batch-start',
-      batchIndex: 0,
-      total: 1,
-      completed: 0,
-      partial: 0,
-      message: '正在生成 1 张图片...',
-    });
-
-    const preferStream = shouldUseImageStream(payload);
-    let finalItem;
-    try {
-      finalItem = await requestSingleImage(
-        payload,
-        model,
-        references,
-        signal,
-        event,
-        {
-          stream: preferStream,
-        },
-      );
-    } catch (error) {
-      const cancelled = signal.aborted || /AbortError/i.test(error?.name || '');
-      if (cancelled || !preferStream) throw error;
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+      const batchCount = batches[batchIndex];
       report(event, {
         phase: 'batch-start',
-        batchIndex: 0,
-        total: 1,
-        completed: 0,
+        batchIndex,
+        total: request.count,
+        completed,
         partial: 0,
-        message: '流式响应不稳定，正在切换普通生成...',
+        message:
+          batches.length === 1
+            ? `正在生成 ${request.count} 张图片...`
+            : `正在处理第 ${batchIndex + 1}/${batches.length} 批图片...`,
       });
-      finalItem = await requestSingleImage(
-        payload,
-        model,
-        references,
-        signal,
-        event,
-        { stream: false },
+
+      const providerResult = normalizeProviderResult(
+        await provider.generate({
+          request,
+          signal,
+          count: batchCount,
+          onProgress: progressReporter(
+            event,
+            request,
+            batchIndex,
+            request.count,
+            completed,
+          ),
+        }),
       );
+      const saved = await saveGeneratedImages(
+        providerResult.items.slice(0, batchCount),
+        {
+          key: request.apiKey,
+          outputFormat: request.outputFormat,
+        },
+      );
+      images.push(...saved.images);
+      localPaths.push(...saved.localPaths);
+      folder = saved.folder || folder;
+      completed = images.length;
+      report(event, {
+        phase: 'batch-complete',
+        batchIndex,
+        total: request.count,
+        completed,
+        partial: 0,
+        images: [...images],
+        localPaths: [...localPaths],
+        message: `已完成 ${completed}/${request.count} 张图片`,
+      });
     }
-    if (!finalItem) throw new Error('provider returned no image');
-    const saved = await saveGeneratedImages([finalItem], {
-      key: payload.apiKey,
-      outputFormat: requestedOutputFormat(payload),
-    });
-    const image = saved.images[0];
-    const localPath = saved.localPaths[0];
-    report(event, {
-      phase: 'batch-complete',
-      batchIndex: 0,
-      total: 1,
-      completed: 1,
-      partial: PARTIAL_IMAGE_COUNT,
-      image,
-      localPath,
-      message: '第 1/1 张已完成',
-    });
-    return { ok: true, ...saved };
+
+    const failedCount = Math.max(0, request.count - completed);
+    return {
+      ok: failedCount === 0,
+      images,
+      localPaths,
+      folder,
+      failedCount,
+      error: failedCount ? `生图服务仅返回了 ${completed} 张图片` : '',
+    };
   } catch (error) {
     const cancelled = signal.aborted || /AbortError/i.test(error?.name || '');
     const message = cancelled ? '已取消生成' : userFacingError(error);
     report(event, {
       phase: cancelled ? 'cancelled' : 'batch-error',
-      batchIndex: 0,
-      total: 1,
-      completed: 0,
+      batchIndex: Math.max(0, batches.length - 1),
+      total: request.count,
+      completed,
+      failed: Math.max(0, request.count - completed),
       message,
     });
-    return { ok: false, cancelled, error: message };
+    return {
+      ok: false,
+      cancelled,
+      error: message,
+      images,
+      localPaths,
+      folder,
+      failedCount: Math.max(0, request.count - completed),
+    };
   }
 }
 
-async function generateBatch(payload, total, event, signal) {
-  if (!payload?.apiKey) return { ok: false, error: '请先填写 API Key' };
-  payload.prompt = normalizedPrompt(payload.prompt);
-  if (!payload.prompt) return { ok: false, error: '请输入提示词' };
-  const model = normalizeModel(payload.model?.trim() || OPENAI_IMAGE_MODEL);
-  if (promptLength(payload.prompt) > DEFAULT_PROMPT_LIMIT) {
-    return {
-      ok: false,
-      error: `提示词最多支持 ${DEFAULT_PROMPT_LIMIT} 个字符`,
-    };
-  }
-
-  const references = Array.isArray(payload.reference) ? payload.reference : [];
-  if (references.length > MAX_REFERENCE_COUNT) {
-    return { ok: false, error: `最多支持 ${MAX_REFERENCE_COUNT} 张参考图` };
-  }
-
-  try {
-    report(event, {
-      phase: 'batch-start',
-      batchIndex: 0,
-      total,
-      completed: 0,
-      partial: 0,
-      message: `正在抽卡队列中，等待 ${total} 张作品...`,
-    });
-
-    const providerResult = await sendOpenAiRequest(
-      payload,
-      model,
-      references,
-      signal,
-      { count: total, stream: false },
-    );
-    let items;
-    if (providerResult.kind === 'result') {
-      items = providerResult.items || [];
-    } else {
-      const json = await responseJson(providerResult.response, 'image api');
-      items = imagesOf(json);
-    }
-    if (!items.length) throw new Error('接口未返回图片数据');
-    const saved = await saveGeneratedImages(items, {
-      key: payload.apiKey,
-      outputFormat: requestedOutputFormat(payload),
-    });
-    report(event, {
-      phase: 'batch-complete',
-      batchIndex: 0,
-      total,
-      completed: saved.images.length,
-      partial: 0,
-      images: saved.images,
-      localPaths: saved.localPaths,
-      message: `抽卡完成，共 ${saved.images.length} 张图片`,
-    });
-    return { ok: true, ...saved };
-  } catch (error) {
-    const cancelled = signal.aborted || /AbortError/i.test(error?.name || '');
-    const message = cancelled ? '已取消生成' : userFacingError(error);
-    report(event, {
-      phase: cancelled ? 'cancelled' : 'batch-error',
-      batchIndex: 0,
-      total,
-      completed: 0,
-      message,
-    });
-    return { ok: false, cancelled, error: message };
-  }
+function invalidRequestResult(event, error) {
+  report(event, {
+    phase: 'done',
+    ok: false,
+    total: 0,
+    completed: 0,
+    failed: 0,
+    message: error,
+  });
+  return { ok: false, error, failedCount: 0 };
 }
 
 function registerGenerationHandler() {
@@ -469,40 +228,32 @@ function registerGenerationHandler() {
       return { ok: false, error: '已有图片正在生成，请稍候' };
     }
 
-    const endpoint = String(payload?.endpoint || '').trim();
-    const apiKey = String(payload?.apiKey || '').trim();
-    if (!endpoint || !apiKey) {
-      const error =
-        !endpoint && !apiKey
-          ? '请先填写接口地址和 API Key'
-          : !endpoint
-            ? '请先填写接口地址'
-            : '请先填写 API Key';
-      report(event, {
-        phase: 'done',
-        ok: false,
-        total: 0,
-        completed: 0,
-        failed: 0,
-        message: error,
-      });
-      return { ok: false, error, failedCount: 0 };
+    const request = normalizeGenerationRequest(payload);
+    const provider = getProvider(request.providerId);
+    if (!provider) {
+      return invalidRequestResult(
+        event,
+        `未找到生图服务：${request.providerId}`,
+      );
     }
+    const capabilities = resolveProviderCapabilities(provider, request);
+    const validationError = validateGenerationRequest(
+      provider,
+      request,
+      capabilities,
+    );
+    if (validationError) return invalidRequestResult(event, validationError);
 
     const controller = new AbortController();
-    activeGeneration = { controller };
-    const provider = getProvider(payload?.providerId);
-    const requestedTotal = Math.min(
-      MAX_GENERATION_COUNT,
-      Math.max(1, Number(payload?.count) || 1),
-    );
-    const total = provider?.capabilities?.batch === false ? 1 : requestedTotal;
-
+    activeGeneration = { controller, providerId: provider.id };
     try {
-      const result =
-        total === 1
-          ? await generateSingle(payload, event, controller.signal)
-          : await generateBatch(payload, total, event, controller.signal);
+      const result = await executeGeneration({
+        provider,
+        request,
+        capabilities,
+        event,
+        signal: controller.signal,
+      });
       const summary = {
         ok: Boolean(result.ok),
         images: result.images || [],
@@ -515,16 +266,15 @@ function registerGenerationHandler() {
       report(event, {
         phase: summary.cancelled ? 'cancelled' : 'done',
         ok: summary.ok,
-        total,
+        total: request.count,
         completed: summary.images.length,
         failed: summary.failedCount,
         message: summary.cancelled
           ? '已取消生成'
-          : summary.error
-            ? summary.error
-            : total === 1
+          : summary.error ||
+            (request.count === 1
               ? '生成完成'
-              : `生成完成，共 ${summary.images.length} 张图片`,
+              : `生成完成，共 ${summary.images.length} 张图片`),
       });
       return summary;
     } finally {
