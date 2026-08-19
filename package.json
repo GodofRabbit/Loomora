@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "文生图工作台",
   "author": "伟大的兔神 <believe_rl@163.com>",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "main.js",
   "scripts": {
     "format": "prettier --write .",

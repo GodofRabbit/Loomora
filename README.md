@@ -6,7 +6,7 @@
 [![Vue](https://img.shields.io/badge/Vue-3-7952B3?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5-8A63D2?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-8A63D2)](#运行环境)
-[![License](https://img.shields.io/badge/License-Apache--2.0-D6A84B)](#license)
+[![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial-D6A84B)](#license)
 
 Loomora 将 AI 生图、聊天式创作历史、本地作品库、灵感复用、图片编辑和离线 OCR 集中在一个桌面应用中。作品、提示词、编辑版本和整理信息保存在本机；API Key 使用系统安全存储加密，不会写入作品目录或备份包，适合需要长期积累个人素材的创作者。
 
@@ -358,6 +358,18 @@ Loomora/
 └─ vite.config.mjs                # Vite 配置
 ```
 
+## 使用与授权声明
+
+Loomora 源代码采用 **PolyForm Noncommercial License 1.0.0** 公开，允许个人学习、研究、评估及其他非商业用途，但不属于允许自由商用的开源软件。未经作者书面授权，不得将 Loomora 源代码、修改版本、衍生版本或其主要功能用于收费软件、商业服务、企业营利项目、广告获利、付费部署、代运营、再销售或其他直接、间接盈利活动。需要商业使用时，请通过 `believe_rl@163.com` 联系作者取得单独的商业授权。
+
+“Loomora”名称、Logo、应用图标、视觉识别及相关品牌资产均归作者个人所有。源码公开不代表授予商标权、品牌使用权，也不允许他人以 Loomora 官方版本、官方合作或类似名义发布、推广或销售产品与服务。
+
+项目中展示的个人作品、示例作品、界面截图、头像、灵感图片及其他非代码素材，仅用于个人展示、学习和功能演示。除非已取得权利人的明确授权，不得将这些内容用于商业宣传、商品销售、广告投放、转载分发、二次销售或其他营利性用途。
+
+用户导入或生成的图片，其版权、肖像权、商标权和其他相关权利由用户自行确认并承担责任。使用第三方 Provider 生成图片时，还必须遵守对应平台的服务条款、模型许可和内容政策；Loomora 不因提供本地创作工具而授予任何图片或素材的商业使用权。
+
+第三方依赖、模型和资源仍分别适用各自的许可证。本项目许可证不会改变或扩大任何第三方组件原有的许可范围。
+
 ## License
 
-Apache-2.0
+源码采用 [PolyForm Noncommercial License 1.0.0](LICENSE)：允许非商业使用，任何商业使用或盈利行为均须事先取得作者书面授权。Loomora 品牌及相关视觉资产保留全部权利，具体商业授权和品牌声明请查看 [NOTICE](NOTICE)。
