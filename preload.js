@@ -2,6 +2,15 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('forge', {
   platform: process.platform,
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  getUpdateState: () => ipcRenderer.invoke('get-update-state'),
+  onUpdateStatus: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('update-status', listener);
+    return () => ipcRenderer.removeListener('update-status', listener);
+  },
   getOnboardingComplete: () => ipcRenderer.invoke('get-onboarding-complete'),
   setOnboardingComplete: () => ipcRenderer.invoke('set-onboarding-complete'),
   getSecureApiKey: (profileId) =>

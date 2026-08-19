@@ -20,8 +20,8 @@
     "dist:mac": "npm run build:ui && node scripts/package-app.js --mac"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.5",
     "@paddlejs-models/ocr": "^1.2.4",
+    "@vitejs/plugin-vue": "^5.0.5",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "electron": "^31.0.0",
@@ -62,7 +62,8 @@
     ],
     "win": {
       "icon": "build/icon-system.ico",
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "${productName}-Setup-${version}-win-${arch}.${ext}"
     },
     "nsis": {
       "differentialPackage": false,
@@ -80,8 +81,15 @@
     },
     "mac": {
       "icon": "build/icon-system.icns",
-      "target": "dmg",
-      "category": "public.app-category.graphics-design"
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.graphics-design",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

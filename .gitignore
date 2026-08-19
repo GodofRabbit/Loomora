@@ -4,3 +4,4 @@ dist/
 Gallery/
 .DS_Store
 *.log
+.release-tokens.json

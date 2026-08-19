@@ -1,12 +1,31 @@
 <script setup>
-import { BookOpen, CircleHelp, Copy, Sparkles, X } from 'lucide-vue-next';
+import {
+  BookOpen,
+  CircleHelp,
+  Copy,
+  Download,
+  RefreshCw,
+  Sparkles,
+  X,
+} from 'lucide-vue-next';
 import appLogo from '../../assets/logo-ui.png';
 
-defineProps({
+const props = defineProps({
   open: Boolean,
   appInfo: { type: Object, default: () => ({}) },
+  updateState: {
+    type: Object,
+    default: () => ({ status: 'idle', message: '尚未检查更新', progress: 0 }),
+  },
 });
-defineEmits(['close', 'copy-email', 'show-guide']);
+defineEmits([
+  'close',
+  'copy-email',
+  'show-guide',
+  'check-update',
+  'download-update',
+  'install-update',
+]);
 </script>
 
 <template>
@@ -82,6 +101,53 @@ defineEmits(['close', 'copy-email', 'show-guide']);
               <span>图片编辑与离线文字识别</span>
               <span>灵感广场与提示词复用</span><span>自定义存储目录与导出</span>
             </div>
+          </section>
+          <section class="about-section about-update-section">
+            <div class="about-section-title">
+              <RefreshCw aria-hidden="true" /><b>应用更新</b>
+            </div>
+            <div class="about-update-row">
+              <span class="about-update-message">{{
+                props.updateState.message
+              }}</span>
+              <button
+                v-if="
+                  !['checking', 'downloading'].includes(
+                    props.updateState.status,
+                  )
+                "
+                class="about-update-action"
+                type="button"
+                @click="$emit('check-update')"
+              >
+                <RefreshCw aria-hidden="true" />检查更新
+              </button>
+              <button v-else class="about-update-action" type="button" disabled>
+                <RefreshCw class="spin" aria-hidden="true" />处理中
+              </button>
+            </div>
+            <div
+              v-if="props.updateState.status === 'downloading'"
+              class="about-update-progress"
+            >
+              <span :style="{ width: `${props.updateState.progress || 0}%` }" />
+            </div>
+            <button
+              v-if="props.updateState.status === 'available'"
+              class="about-update-primary"
+              type="button"
+              @click="$emit('download-update')"
+            >
+              <Download aria-hidden="true" />下载新版本
+            </button>
+            <button
+              v-if="props.updateState.status === 'downloaded'"
+              class="about-update-primary"
+              type="button"
+              @click="$emit('install-update')"
+            >
+              <Download aria-hidden="true" />重启并安装
+            </button>
           </section>
         </div>
         <footer>

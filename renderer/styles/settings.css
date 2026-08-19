@@ -787,6 +787,82 @@
   background: #a978ed;
   content: '';
 }
+.about-update-row {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.about-update-message {
+  min-width: 0;
+  overflow: hidden;
+  color: #aaa2b4;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.about-update-action,
+.about-update-primary {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(182, 138, 248, 0.45);
+  border-radius: 6px;
+  background: rgba(182, 138, 248, 0.1);
+  color: #eadfff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.about-update-action:hover,
+.about-update-primary:hover {
+  border-color: #b68af8;
+  background: rgba(182, 138, 248, 0.2);
+}
+.about-update-action:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.about-update-action svg,
+.about-update-primary svg {
+  width: 14px;
+  height: 14px;
+}
+.about-update-primary {
+  justify-self: start;
+  border-color: rgba(214, 168, 75, 0.55);
+  background: rgba(214, 168, 75, 0.14);
+  color: #f3d58a;
+}
+.about-update-primary:hover {
+  border-color: #d6a84b;
+  background: rgba(214, 168, 75, 0.22);
+}
+.about-update-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.about-update-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #b68af8;
+  transition: width 0.2s ease;
+}
+.about-update-action .spin {
+  animation: about-update-spin 1s linear infinite;
+}
+@keyframes about-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .about-guide-button {
   display: inline-flex;
   margin-right: auto;

@@ -9,12 +9,12 @@ const builderCli = require.resolve('electron-builder/cli.js');
 function builderArguments() {
   const requestedPlatform = process.argv[2];
   if (requestedPlatform === '--win') return ['--win', 'nsis'];
-  if (requestedPlatform === '--mac') return ['--mac', 'dmg'];
+  if (requestedPlatform === '--mac') return ['--mac'];
   if (requestedPlatform) {
     throw new Error(`不支持的打包平台参数：${requestedPlatform}`);
   }
   if (process.platform === 'win32') return ['--win', 'nsis'];
-  if (process.platform === 'darwin') return ['--mac', 'dmg'];
+  if (process.platform === 'darwin') return ['--mac'];
   return [];
 }
 

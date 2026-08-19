@@ -21,6 +21,7 @@ const {
 const { registerBackupHandlers } = require('./electron/backup');
 const { registerLocalDataHandlers } = require('./electron/localData');
 const { registerPreferenceHandlers } = require('./electron/preferences');
+const { registerUpdateHandlers } = require('./electron/updateService');
 const {
   registerSecureCredentialHandlers,
 } = require('./electron/secureCredentials');
@@ -188,6 +189,11 @@ registerPreferenceHandlers();
 registerSecureCredentialHandlers();
 registerShortcutHandlers();
 registerLocalDataHandlers();
+const updateHandlers = registerUpdateHandlers(() => mainWindow);
+ipcMain.handle('check-for-updates', () => updateHandlers.checkForUpdates());
+ipcMain.handle('download-update', () => updateHandlers.downloadUpdate());
+ipcMain.handle('install-update', () => updateHandlers.installUpdate());
+ipcMain.handle('get-update-state', () => updateHandlers.getState());
 ipcMain.handle('get-app-info', () => ({
   name: app.getName(),
   version: app.getVersion(),
@@ -202,6 +208,8 @@ app.whenReady().then(() => {
   }
   registerGalleryProtocol();
   createWindow();
+  // Packaged apps check Gitee first and fall back to GitHub after startup.
+  setTimeout(() => updateHandlers.checkForUpdates(), 8000);
   app.on('activate', () => {
     if (!mainWindow || mainWindow.isDestroyed()) createWindow();
   });

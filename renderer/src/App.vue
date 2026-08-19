@@ -57,6 +57,12 @@ const appInfo = ref({
   author: '伟大的兔神',
   email: 'believe_rl@163.com',
 });
+const updateState = ref({
+  status: 'idle',
+  message: '尚未检查更新',
+  version: '',
+  progress: 0,
+});
 const toast = ref(null);
 const gallery = ref([]);
 const galleryTrash = ref([]);
@@ -106,6 +112,7 @@ const creationHistoryVisible = ref(false);
 let toastTimer;
 let scrollResizeObserver;
 let stopGenerationUpdate;
+let stopUpdateStatus;
 let lastComposerCollapseAt = 0;
 let composerCollapseLockUntil = 0;
 let composerCollapseRequested = false;
@@ -2041,6 +2048,33 @@ function openAbout() {
   aboutOpen.value = true;
 }
 
+async function checkForUpdates() {
+  try {
+    updateState.value = await window.forge.checkForUpdates();
+  } catch (error) {
+    updateState.value = {
+      status: 'error',
+      message: formatUserMessage(error, '检查更新失败，请稍后重试'),
+    };
+  }
+}
+
+async function downloadUpdate() {
+  try {
+    updateState.value = await window.forge.downloadUpdate();
+  } catch (error) {
+    showToast(formatUserMessage(error, '下载更新失败，请稍后重试'), 'error');
+  }
+}
+
+async function installUpdate() {
+  try {
+    await window.forge.installUpdate();
+  } catch (error) {
+    showToast(formatUserMessage(error, '安装更新失败，请稍后重试'), 'error');
+  }
+}
+
 function requestClearLocalData() {
   if (localDataClearing.value) return;
   if (busy.value) {
@@ -2424,6 +2458,15 @@ onMounted(() => {
   stopGenerationUpdate = window.forge?.onGenerationUpdate?.((update) => {
     applyGenerationUpdate(update);
   });
+  stopUpdateStatus = window.forge?.onUpdateStatus?.((state) => {
+    if (state) updateState.value = state;
+  });
+  window.forge
+    ?.getUpdateState?.()
+    .then((state) => {
+      if (state) updateState.value = state;
+    })
+    .catch(() => {});
   window.forge
     ?.getAppInfo?.()
     .then((result) => {
@@ -2448,6 +2491,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  stopUpdateStatus?.();
+  stopGenerationUpdate?.();
   if (startupIdleTimer == null) return;
   if ('cancelIdleCallback' in window) {
     window.cancelIdleCallback(startupIdleTimer);
@@ -3024,9 +3069,13 @@ onBeforeUnmount(() => {
     <AboutModal
       :open="aboutOpen"
       :app-info="appInfo"
+      :update-state="updateState"
       @close="aboutOpen = false"
       @copy-email="copyAuthorEmail"
       @show-guide="showOnboardingFromAbout"
+      @check-update="checkForUpdates"
+      @download-update="downloadUpdate"
+      @install-update="installUpdate"
     />
     <OnboardingModal
       :open="onboardingOpen"
