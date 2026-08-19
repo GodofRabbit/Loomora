@@ -15,9 +15,9 @@ Loomora 将 AI 生图、聊天式创作历史、本地作品库、灵感复用�
 | 平台    | 国内下载（Gitee）                                                    | 国际下载（GitHub）                                                      |
 | ------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Windows | [前往 Gitee Releases](https://gitee.com/cuteRabbit/Loomora/releases) | [前往 GitHub Releases](https://github.com/GodofRabbit/Loomora/releases) |
-| macOS   | 暂未发布，DMG 将在 macOS 构建完成后上传                              | 暂未发布，DMG 将在 macOS 构建完成后上传                                 |
+| macOS   | 请从 GitHub Releases 下载                                            | [前往 GitHub Releases](https://github.com/GodofRabbit/Loomora/releases) |
 
-Windows 安装包、更新清单和 SHA-256 校验值会同时发布到两个渠道。国内用户建议优先使用 Gitee；GitHub 作为国际下载和备用渠道。
+Windows 安装包、更新清单和 SHA-256 校验值会同时发布到两个渠道。macOS 安装包、更新清单和 SHA-256 校验值已发布到 GitHub；Gitee Release 单附件大小限制为 100 MB，当前 macOS 包请从 GitHub 下载。国内 Windows 用户建议优先使用 Gitee；GitHub 作为国际下载和备用渠道。
 
 ## 核心能力
 
